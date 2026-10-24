@@ -14,6 +14,7 @@ export type StoryPromptMode = 'instruct' | 'continue'
 
 export type StoryContextInput = {
   lore: string
+  chapterSynopsis: string
   prompt: string
   story: string
   summaries: StorySectionSummary[]
@@ -27,6 +28,7 @@ export type StoryContext = {
   loreBudget: number
   summaries: string
   story: string
+  chapterSynopsis: string
   continueCurrentParagraph: boolean
   budget: {
     inputChars: number
@@ -69,7 +71,8 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
     !validSummaries.some(({ range }) => range && paragraph.start < range.end && paragraph.end > range.start),
   )
   const uncompressedTextLength = uncompressedParagraphs.reduce((length, paragraph) => length + paragraph.text.length + 2, 0)
-  const fixedChars = prompt.length + summarySystem.length + STORY_PROMPT_RESERVE_CHARS
+  const chapterSynopsis = input.chapterSynopsis.trim()
+  const fixedChars = prompt.length + chapterSynopsis.length + summarySystem.length + STORY_PROMPT_RESERVE_CHARS
   remainingChars = Math.max(0, remainingChars - fixedChars)
   const storyBudget = Math.min(uncompressedTextLength, Math.floor(remainingChars * STORY_TEXT_BUDGET_SHARE))
   let storyTail = ''
@@ -114,6 +117,7 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
     loreBudget,
     summaries: selectedSummaries.join('\n'),
     story: storyTail,
+    chapterSynopsis,
     continueCurrentParagraph: Boolean(input.story.trim()) && !/(?:\r\n|\n)[\t ]*$/.test(input.story),
     budget: {
       inputChars,
@@ -121,6 +125,7 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
       storyChars: storyTail.length,
       loreLimitChars: loreBudget,
       summaryChars: selectedSummaries.join('\n').length,
+      chapterSynopsisChars: chapterSynopsis.length,
     },
   }
 }
@@ -134,6 +139,7 @@ export function makeStoryRequest(input: StoryRequestInput, context: StoryContext
       ? 'Continue directly from the story’s final character and remain in the current paragraph. Do not start a new paragraph.'
       : '',
     context.lore ? `Lore and story facts:\n${context.lore}` : '',
+    context.chapterSynopsis ? `Current chapter synopsis:\n${context.chapterSynopsis}` : '',
     // Summaries are memory for older events, not canonical prose to continue or rewrite. Plain
     // labels keep them distinct without requiring the model to produce a structured response.
     context.summaries ? `Story so far (section summaries):\n${context.summaries}` : '',
@@ -142,6 +148,7 @@ export function makeStoryRequest(input: StoryRequestInput, context: StoryContext
   if (input.mode === 'continue') {
     const prompt = [
       context.lore ? `[Lore]\n${context.lore}` : '',
+      context.chapterSynopsis ? `[Current chapter synopsis]\n${context.chapterSynopsis}` : '',
       context.summaries ? `[Story memory]\n${context.summaries}` : '',
       input.prompt.trim() ? `[Next prompt: ${input.prompt.trim()}]` : '',
       context.continueCurrentParagraph ? '[Continue on the same line and in the same paragraph.]' : '',

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   charsForContextBudget,
+  allChapterStructureBudget,
+  chapterSynopsisBudget,
   feedbackContextAllocation,
   loreSelectorBudget,
   proofreadingBudget,
@@ -16,6 +18,22 @@ test('shared context budget converts remaining tokens to a non-negative characte
 test('summary source budget reserves output and request context', () => {
   assert.equal(summarySourceBudget(4096), Math.floor((4096 - 120 - 200) * 3.5))
   assert.equal(summarySourceBudget(100), 300)
+})
+
+test('chapter synopsis budget reserves output and context', () => {
+  assert.deepEqual(chapterSynopsisBudget(4096), {
+    outputTokens: 500,
+    inputChars: Math.floor((4096 - 500 - 300) * 3.5),
+  })
+
+  test('full story structure reserves enough output for all chapter plans', () => {
+    assert.deepEqual(allChapterStructureBudget(4096, 1), {
+      outputTokens: 700,
+      inputChars: Math.floor((4096 - 700 - 300) * 3.5),
+    })
+    assert.equal(allChapterStructureBudget(4096, 4).outputTokens, 1600)
+    assert.ok(allChapterStructureBudget(4096, 4).inputChars > 0)
+  })
 })
 
 test('proofreading budget applies the output floor, context reserve, and chunk cap', () => {

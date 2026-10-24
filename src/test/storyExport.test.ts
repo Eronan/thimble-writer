@@ -10,6 +10,11 @@ test('Markdown export retains the story text exactly', async () => {
   assert.equal(await blob.text(), story)
 })
 
+test('Markdown export adds the chapter title as a heading', async () => {
+  const blob = createStoryMarkdown('Chapter prose.', 'The <Long> Night')
+  assert.equal(await blob.text(), '# The <Long> Night\n\nChapter prose.')
+})
+
 test('ODT export creates a valid archive with escaped, paragraph-preserving story text', async () => {
   const blob = createStoryOdt('First <scene>.\ncontinued.\n\nA  second & final scene.')
   assert.equal(blob.type, 'application/vnd.oasis.opendocument.text')
@@ -27,4 +32,12 @@ test('ODT export creates a valid archive with escaped, paragraph-preserving stor
   const nameLength = bytes[26]! | (bytes[27]! << 8)
   assert.equal(new TextDecoder().decode(bytes.slice(30, 30 + nameLength)), 'mimetype')
   assert.equal(bytes[8]! | (bytes[9]! << 8), 0)
+})
+
+test('ODT export adds an escaped chapter title heading before the story', async () => {
+  const blob = createStoryOdt('Chapter prose.', 'The <Long> Night & Dawn')
+  const archive = unzipSync(new Uint8Array(await blob.arrayBuffer()))
+  const content = new TextDecoder().decode(archive['content.xml'])
+  assert.match(content, /<text:h text:outline-level="1" text:style-name="ChapterTitle">The &lt;Long&gt; Night &amp; Dawn<\/text:h>/)
+  assert.ok(content.indexOf('<text:h text:outline-level') < content.indexOf('<text:p text:style-name="StoryParagraph">'))
 })

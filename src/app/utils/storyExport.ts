@@ -24,12 +24,15 @@ function formatOdtLine(line: string): string {
     .join('')
 }
 
-function createContentXml(story: string): string {
+function createContentXml(story: string, chapterTitle: string): string {
   const paragraphs = story
     .replace(/\r\n?/g, '\n')
     .split(/\n[ \t]*\n+/)
     .map(paragraph => paragraph.split('\n').map(formatOdtLine).join('<text:line-break/>'))
-  const body = paragraphs.map(paragraph => `<text:p text:style-name="StoryParagraph">${paragraph}</text:p>`).join('')
+  const title = chapterTitle.trim()
+    ? `<text:h text:outline-level="1" text:style-name="ChapterTitle">${escapeXml(chapterTitle.trim())}</text:h>`
+    : ''
+  const body = title + paragraphs.map(paragraph => `<text:p text:style-name="StoryParagraph">${paragraph}</text:p>`).join('')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.2">
@@ -37,20 +40,25 @@ function createContentXml(story: string): string {
     <style:style style:name="StoryParagraph" style:family="paragraph">
       <style:paragraph-properties fo:margin-top="0in" fo:margin-bottom="0.16in" fo:line-height="150%"/>
     </style:style>
+    <style:style style:name="ChapterTitle" style:family="paragraph">
+      <style:paragraph-properties fo:keep-with-next="always" fo:margin-top="0in" fo:margin-bottom="0.24in"/>
+      <style:text-properties fo:font-size="20pt" fo:font-weight="bold"/>
+    </style:style>
   </office:automatic-styles>
   <office:body><office:text>${body}</office:text></office:body>
 </office:document-content>`
 }
 
-export function createStoryMarkdown(story: string): Blob {
-  return new Blob([story], { type: 'text/markdown;charset=utf-8' })
+export function createStoryMarkdown(story: string, chapterTitle = ''): Blob {
+  const content = chapterTitle.trim() ? `# ${chapterTitle.trim()}\n\n${story}` : story
+  return new Blob([content], { type: 'text/markdown;charset=utf-8' })
 }
 
-export function createStoryOdt(story: string): Blob {
+export function createStoryOdt(story: string, chapterTitle = ''): Blob {
   const files = {
     // ODT readers require this exact MIME entry first in the ZIP and stored without compression.
     mimetype: [encoder.encode('application/vnd.oasis.opendocument.text'), { level: 0 }],
-    'content.xml': encoder.encode(createContentXml(story)),
+    'content.xml': encoder.encode(createContentXml(story, chapterTitle)),
     'styles.xml': encoder.encode(`<?xml version="1.0" encoding="UTF-8"?>
 <office:document-styles xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" office:version="1.2">
   <office:styles/>

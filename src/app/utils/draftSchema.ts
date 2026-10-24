@@ -1,7 +1,8 @@
 import { migrateLoreFields } from './loreWorkspace.ts'
 import type { LoreNote } from './loreWorkspace.ts'
+import type { StoryChapter } from '~/types/storyWriter'
 
-export const DRAFT_SCHEMA_VERSION = 2
+export const DRAFT_SCHEMA_VERSION = 4
 
 type DraftData = Record<string, unknown> & {
   schemaVersion?: unknown
@@ -46,9 +47,90 @@ function versionOneToTwo(data: DraftData): DraftData {
   }
 }
 
+function createChapter(
+  id: string,
+  title: string,
+  value: Record<string, unknown> = {},
+): StoryChapter {
+  return {
+    id,
+    title,
+    synopsis: typeof value.synopsis === 'string' ? value.synopsis : '',
+    story: typeof value.story === 'string' ? value.story : '',
+    summaries: Array.isArray(value.summaries)
+      ? value.summaries.filter((item): item is StoryChapter['summaries'][number] =>
+          typeof item?.id === 'string'
+          && typeof item?.source === 'string'
+          && typeof item?.summary === 'string',
+        )
+      : [],
+    feedback: Array.isArray(value.feedback)
+      ? value.feedback.filter((item): item is StoryChapter['feedback'][number] =>
+          typeof item?.id === 'string'
+          && typeof item?.source === 'string'
+          && typeof item?.instruction === 'string'
+          && Number.isInteger(item?.start),
+        )
+      : [],
+    feedbackRevisions: Array.isArray(value.feedbackRevisions)
+      ? value.feedbackRevisions.filter((item): item is StoryChapter['feedbackRevisions'][number] =>
+          typeof item?.id === 'string'
+          && typeof item?.instruction === 'string'
+          && typeof item?.before === 'string'
+          && typeof item?.after === 'string'
+          && Number.isFinite(item?.appliedAt),
+        )
+      : [],
+  }
+}
+
+function migrateChapter(value: unknown, index: number): StoryChapter | null {
+  if (typeof value !== 'object' || value === null) return null
+  const item = value as Record<string, unknown>
+  const id = typeof item.id === 'string' && item.id ? item.id : `chapter-${index + 1}`
+  const title = typeof item.title === 'string' && item.title.trim()
+    ? item.title
+    : `Chapter ${index + 1}`
+  return createChapter(id, title, item)
+}
+
+function versionTwoToThree(data: DraftData): DraftData {
+  const chapters = Array.isArray(data.chapters)
+    ? data.chapters.map(migrateChapter).filter((chapter): chapter is StoryChapter => chapter !== null)
+    : []
+  const migratedChapters = chapters.length
+    ? chapters
+    : [createChapter('chapter-1', 'Chapter 1', { ...data, synopsis: '' })]
+  const activeChapterId = typeof data.activeChapterId === 'string'
+    && migratedChapters.some(chapter => chapter.id === data.activeChapterId)
+    ? data.activeChapterId
+    : migratedChapters[0]?.id ?? 'chapter-1'
+  const next: DraftData = {
+    ...data,
+    chapters: migratedChapters,
+    activeChapterId,
+    schemaVersion: 3,
+  }
+  delete next.story
+  delete next.summaries
+  delete next.feedback
+  delete next.feedbackRevisions
+  return next
+}
+
+function versionThreeToFour(data: DraftData): DraftData {
+  return {
+    ...data,
+    structurePrompt: typeof data.structurePrompt === 'string' ? data.structurePrompt : '',
+    schemaVersion: 4,
+  }
+}
+
 const migrations: Record<number, (data: DraftData) => DraftData> = {
   0: versionZeroToOne,
   1: versionOneToTwo,
+  2: versionTwoToThree,
+  3: versionThreeToFour,
 }
 
 function inferVersion(data: DraftData): number {
@@ -76,5 +158,21 @@ export function migrateDraftData(value: unknown): DraftData {
     data = migrate(data)
     version = inferVersion(data)
   }
-  return { ...data, schemaVersion: DRAFT_SCHEMA_VERSION }
+  const chapters = Array.isArray(data.chapters)
+    ? data.chapters.map(migrateChapter).filter((chapter): chapter is StoryChapter => chapter !== null)
+    : []
+  const normalizedChapters = chapters.length
+    ? chapters
+    : [createChapter('chapter-1', 'Chapter 1')]
+  const activeChapterId = typeof data.activeChapterId === 'string'
+    && normalizedChapters.some(chapter => chapter.id === data.activeChapterId)
+    ? data.activeChapterId
+    : normalizedChapters[0]?.id ?? 'chapter-1'
+  return {
+    ...data,
+    structurePrompt: typeof data.structurePrompt === 'string' ? data.structurePrompt : '',
+    chapters: normalizedChapters,
+    activeChapterId,
+    schemaVersion: DRAFT_SCHEMA_VERSION,
+  }
 }

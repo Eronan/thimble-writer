@@ -10,11 +10,14 @@ defineProps<{
       storyLimitChars: number
       storyChars: number
       summaryChars: number
+      chapterSynopsisChars: number
       loreLimitChars: number
     }
     story: string
     summaries: string
     prompt: string
+    chapterSynopsis: string
+    chapterTitle: string
     loreEntries: string
     loreError: string
     loreSelectorInputChars: number
@@ -48,6 +51,7 @@ const emit = defineEmits<{ write: [] }>()
         <div><dt>Available input budget</dt><dd>{{ contextPreview.budget.inputChars }} chars</dd></div>
         <div><dt>Recent prose</dt><dd>{{ contextPreview.budget.storyChars }} / {{ contextPreview.budget.storyLimitChars }} chars</dd></div>
         <div><dt>Story summaries</dt><dd>{{ contextPreview.budget.summaryChars }} chars</dd></div>
+        <div><dt>Chapter synopsis</dt><dd>{{ contextPreview.budget.chapterSynopsisChars }} chars</dd></div>
         <div><dt>Lore selection input</dt><dd>{{ contextPreview.loreEntries.length }} / {{ contextPreview.loreSelectorInputChars }} chars</dd></div>
         <div><dt>Selected lore for writing</dt><dd>up to {{ contextPreview.loreGenerationLimitChars }} chars</dd></div>
       </dl>
@@ -55,6 +59,10 @@ const emit = defineEmits<{ write: [] }>()
       <div v-if="contextPreview.prompt" class="context-preview-block">
         <span>Writing direction</span>
         <pre>{{ contextPreview.prompt }}</pre>
+      </div>
+      <div v-if="contextPreview.chapterSynopsis" class="context-preview-block">
+        <span>{{ contextPreview.chapterTitle }} synopsis sent</span>
+        <pre>{{ contextPreview.chapterSynopsis }}</pre>
       </div>
       <div v-if="contextPreview.story" class="context-preview-block">
         <span>Recent prose sent</span>

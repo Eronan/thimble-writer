@@ -4,16 +4,25 @@ import type { LoreNote } from '~/utils/loreWorkspace'
 
 export type PromptMode = 'instruct' | 'continue'
 
+export type StoryChapter = {
+  id: string
+  title: string
+  synopsis: string
+  story: string
+  summaries: StorySectionSummary[]
+  feedback: StoryFeedback[]
+  feedbackRevisions: FeedbackRevision[]
+}
+
 export type Draft = {
   schemaVersion: number
   synopsis: string
   guidance: string
   characters: LoreNote[]
   setting: LoreNote[]
-  story: string
-  summaries: StorySectionSummary[]
-  feedback: StoryFeedback[]
-  feedbackRevisions: FeedbackRevision[]
+  chapters: StoryChapter[]
+  activeChapterId: string
+  structurePrompt: string
   prompt: string
   model: string
   mode: PromptMode

@@ -13,6 +13,8 @@ export const PROOFREAD_CHUNK_LIMIT_CHARS = 2000
 export const MIN_SUMMARY_SOURCE_CHARS = 300
 export const MIN_PROOFREAD_OUTPUT_TOKENS = 1200
 export const PROOFREAD_OUTPUT_HEADROOM_TOKENS = 256
+export const CHAPTER_SYNOPSIS_OUTPUT_TOKENS = 500
+export const CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS = 300
 export const STORY_TEXT_BUDGET_SHARE = 0.6
 export const LORE_BUDGET_SHARE = 0.45
 export const FEEDBACK_NEARBY_BUDGET_SHARE = 0.5
@@ -81,5 +83,36 @@ export function feedbackContextAllocation(availableChars: number) {
     nearbyChars,
     summaryChars,
     loreChars: availableChars - nearbyChars - summaryChars,
+  }
+}
+
+export function chapterSynopsisBudget(contextTokens: number) {
+  const outputTokens = Math.min(
+    CHAPTER_SYNOPSIS_OUTPUT_TOKENS,
+    Math.max(1, contextTokens - PROOFREAD_OUTPUT_HEADROOM_TOKENS),
+  )
+  return {
+    outputTokens,
+    inputChars: charsForContextBudget(
+      contextTokens,
+      outputTokens,
+      CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS,
+    ),
+  }
+}
+
+export function allChapterStructureBudget(contextTokens: number, chapterCount: number) {
+  const inputReserveTokens = Math.min(600, Math.max(1, contextTokens - 1))
+  const outputTokens = Math.min(
+    Math.max(700, chapterCount * 400),
+    Math.max(1, contextTokens - CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS - inputReserveTokens),
+  )
+  return {
+    outputTokens,
+    inputChars: charsForContextBudget(
+      contextTokens,
+      outputTokens,
+      CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS,
+    ),
   }
 }

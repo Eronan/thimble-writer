@@ -1,6 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { ollamaClient, ollamaRequestOptions } from '~/clients/ollamaClient'
-import type { Draft } from '~/types/storyWriter'
+import type { Draft, StoryChapter } from '~/types/storyWriter'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 import {
   anchorProofreadSuggestions,
@@ -13,6 +13,7 @@ import { proofreadingBudget } from '~/utils/contextBudget'
 
 type StoryProofreadingOptions = {
   draft: Draft
+  chapter: Readonly<Ref<StoryChapter>>
   generating: Ref<boolean>
   summarizing: Ref<boolean>
   revisingFeedback: Ref<boolean>
@@ -22,7 +23,7 @@ type StoryProofreadingOptions = {
 
 export function useStoryProofreading(options: StoryProofreadingOptions) {
   const proofreading = ref(false)
-  const { draft, generating, summarizing, revisingFeedback, error, status } = options
+  const { draft, chapter, generating, summarizing, revisingFeedback, error, status } = options
 
   async function proofreadStory() {
     if (proofreading.value || generating.value || summarizing.value || revisingFeedback.value) return
@@ -30,7 +31,7 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
       error.value = 'Choose an Ollama model before proofreading.'
       return
     }
-    if (!draft.story.trim()) {
+    if (!chapter.value.story.trim()) {
       status.value = 'Write some story text before proofreading.'
       return
     }
@@ -44,8 +45,8 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
     error.value = ''
     status.value = 'Preparing story for proofreading…'
     try {
-      const storySnapshot = draft.story
-      const chunks = splitStoryForProofreading(storySnapshot, budget.chunkChars, draft.summaries)
+      const storySnapshot = chapter.value.story
+      const chunks = splitStoryForProofreading(storySnapshot, budget.chunkChars, chapter.value.summaries)
       const suggestions: AnchoredProofreadSuggestion[] = []
       let skipped = 0
       let truncatedResponses = 0
@@ -91,10 +92,10 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
         skipped += anchored.skipped
       }
 
-      const occupied = draft.feedback
+      const occupied = chapter.value.feedback
         .map(comment => locateFeedback(storySnapshot, comment))
         .filter((range): range is NonNullable<typeof range> => range !== null)
-      if (draft.story !== storySnapshot) {
+      if (chapter.value.story !== storySnapshot) {
         throw new Error('The story changed during proofreading. No comments were added; run proofreading again.')
       }
       let added = 0
@@ -113,7 +114,7 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
           instruction: `${suggestion.issue} Suggested correction: ${suggestion.suggestion}`,
         }
         // Keep proofreading suggestions reviewable so writers choose which changes to apply.
-        draft.feedback.push(comment)
+        chapter.value.feedback.push(comment)
         occupied.push({ start: suggestion.start, end: suggestion.end })
         added++
       }

@@ -7,6 +7,9 @@ import { createStoryMarkdown, createStoryOdt, downloadStory } from '~/utils/stor
 const props = defineProps<{
   canUndo: boolean
   generating: boolean
+  busy: boolean
+  fixingSynopsis: boolean
+  chapterTitle: string
   summaries: StorySectionSummary[]
   activeSummaryId: string | null
   activeFeedbackId: string | null
@@ -18,17 +21,18 @@ const emit = defineEmits<{
   undo: []
   comment: []
   selection: [selection: { start: number; end: number; text: string } | null]
+  fixSynopsis: []
 }>()
 const input = ref<HTMLTextAreaElement | null>(null)
 const highlightLayer = ref<HTMLDivElement | null>(null)
 const selectedLength = ref(0)
 
 function exportMarkdown() {
-  downloadStory(createStoryMarkdown(story.value), 'story.md')
+  downloadStory(createStoryMarkdown(story.value, props.chapterTitle), 'story.md')
 }
 
 function exportOdt() {
-  downloadStory(createStoryOdt(story.value), 'story.odt')
+  downloadStory(createStoryOdt(story.value, props.chapterTitle), 'story.odt')
 }
 
 const segments = computed(() => {
@@ -105,6 +109,12 @@ watch(() => props.activeFeedbackId, async (id) => {
     <div>
       <p class="eyebrow">THE DRAFT</p>
       <h1>Your story</h1>
+      <button
+        class="undo-button"
+        type="button"
+        :disabled="busy || !story.trim()"
+        @click="emit('fixSynopsis')"
+      >{{ fixingSynopsis ? 'Fixing synopsis…' : 'Fix synopsis' }}</button>
     </div>
     <div class="story-actions">
       <span class="word-count">{{ story.trim() ? story.trim().split(/\s+/).length : 0 }} words</span>

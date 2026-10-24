@@ -1,12 +1,13 @@
 import { ref, type Ref } from 'vue'
 import { ollamaClient, ollamaRequestOptions } from '~/clients/ollamaClient'
-import type { Draft } from '~/types/storyWriter'
+import type { Draft, StoryChapter } from '~/types/storyWriter'
 import { planStorySections } from '~/utils/storySections'
 import { summarySourceBudget, SUMMARY_REPLY_TOKENS } from '~/utils/contextBudget'
 import { summarySystem } from '~/utils/storyPrompt'
 
 type StorySummaryOptions = {
   draft: Draft
+  chapter: Readonly<Ref<StoryChapter>>
   generating: Ref<boolean>
   error: Ref<string>
   status: Ref<string>
@@ -14,9 +15,9 @@ type StorySummaryOptions = {
 
 export function useStorySummaries(options: StorySummaryOptions) {
   const summarizing = ref(false)
-  const { draft, generating, error, status } = options
+  const { draft, chapter, generating, error, status } = options
 
-  async function summarizeOlderSections(story = draft.story, flush = true) {
+  async function summarizeOlderSections(story = chapter.value.story, flush = true) {
     if (summarizing.value || generating.value) return
     if (!draft.model) {
       error.value = 'Choose an Ollama model before summarizing story sections.'
@@ -28,7 +29,7 @@ export function useStorySummaries(options: StorySummaryOptions) {
       const sourceBudget = summarySourceBudget(draft.numCtx)
       const sources = planStorySections(
         story,
-        draft.summaries,
+        chapter.value.summaries,
         Math.max(1, Math.floor(draft.writerParagraphs) || 3),
         Math.max(1, Math.floor(draft.sectionParagraphs) || 4),
         flush,
@@ -59,7 +60,7 @@ export function useStorySummaries(options: StorySummaryOptions) {
         })
         const summary = response.replace(/\s+/g, ' ').trim()
         if (!summary) throw new Error('Ollama returned an empty section summary.')
-        draft.summaries.push({
+        chapter.value.summaries.push({
           id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           source,
           summary,

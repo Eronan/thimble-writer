@@ -1,6 +1,8 @@
 <script setup lang="ts">
 const {
   draft,
+  activeChapter,
+  isBusy,
   models,
   loadingModels,
   generating,
@@ -21,14 +23,38 @@ const {
   removeFeedback,
   writeNext,
   undo,
+  selectChapter,
+  addChapter,
+  removeChapter,
+  fixingSynopsis,
+  generatingSynopsisId,
+  generatingAllStructure,
+  fixChapterSynopsis,
+  generateChapterSynopsis,
+  generateAllChapterStructure,
 } = useStoryWriter()
 
 const settingsOpen = ref(false)
-const activeWorkspace = ref<'lore' | 'story'>('story')
+const activeWorkspace = ref<'lore' | 'story' | 'chapters'>('lore')
+const workspacePreferenceReady = ref(false)
 const activeSummaryId = ref<string | null>(null)
 const activeFeedbackId = ref<string | null>(null)
 const storySelection = ref<{ start: number; end: number; text: string } | null>(null)
 const feedbackPanel = ref<{ focusInstruction: () => void } | null>(null)
+
+onMounted(() => {
+  const savedWorkspace = localStorage.getItem('thimble-writer-workspace')
+  if (savedWorkspace === 'lore' || savedWorkspace === 'story' || savedWorkspace === 'chapters') {
+    activeWorkspace.value = savedWorkspace
+  }
+  workspacePreferenceReady.value = true
+})
+
+watch(activeWorkspace, (workspace) => {
+  if (workspacePreferenceReady.value) {
+    localStorage.setItem('thimble-writer-workspace', workspace)
+  }
+})
 
 function queueFeedback(selection: { start: number; end: number; text: string }, instruction: string) {
   if (addFeedback(selection, instruction)) storySelection.value = null
@@ -36,6 +62,13 @@ function queueFeedback(selection: { start: number; end: number; text: string }, 
 
 function focusFeedbackComposer() {
   feedbackPanel.value?.focusInstruction()
+}
+
+function changeChapter(id: string) {
+  selectChapter(id)
+  storySelection.value = null
+  activeSummaryId.value = null
+  activeFeedbackId.value = null
 }
 </script>
 
@@ -59,6 +92,12 @@ function focusFeedbackComposer() {
       >Lore</button>
       <button
         type="button"
+        :aria-pressed="activeWorkspace === 'chapters'"
+        :class="{ active: activeWorkspace === 'chapters' }"
+        @click="activeWorkspace = 'chapters'"
+      >Story Structure</button>
+      <button
+        type="button"
         :aria-pressed="activeWorkspace === 'story'"
         :class="{ active: activeWorkspace === 'story' }"
         @click="activeWorkspace = 'story'"
@@ -73,19 +112,47 @@ function focusFeedbackComposer() {
       v-model:setting="draft.setting"
     />
 
+    <ChapterGenerator
+      v-else-if="activeWorkspace === 'chapters'"
+      v-model:chapters="draft.chapters"
+      v-model:prompt="draft.structurePrompt"
+      :busy="isBusy"
+      :generating-chapter-id="generatingSynopsisId"
+      :generating-all="generatingAllStructure"
+      :chapter-count="draft.chapters.length"
+      :model-available="Boolean(draft.model)"
+      :error="error"
+      :status="status"
+      @generate="generateChapterSynopsis"
+      @generate-all="generateAllChapterStructure"
+      @add="addChapter"
+      @remove="removeChapter"
+    />
+
     <div v-else class="workspace">
+      <ChapterHeader
+        v-model:chapter="activeChapter"
+        :chapters="draft.chapters"
+        :busy="isBusy"
+        @select="changeChapter"
+        @add="addChapter"
+      />
       <section class="story-panel">
         <StoryEditor
-          v-model="draft.story"
+          v-model="activeChapter.story"
+          :chapter-title="activeChapter.title"
           :can-undo="canUndo"
           :generating="generating"
-          :summaries="draft.summaries"
+          :busy="isBusy"
+          :fixing-synopsis="fixingSynopsis"
+          :summaries="activeChapter.summaries"
           :active-summary-id="activeSummaryId"
-          :feedback="draft.feedback"
+          :feedback="activeChapter.feedback"
           :active-feedback-id="activeFeedbackId"
           @undo="undo"
           @comment="focusFeedbackComposer"
           @selection="storySelection = $event"
+          @fix-synopsis="fixChapterSynopsis"
         />
         <PromptComposer
           v-model="draft.prompt"
@@ -99,8 +166,8 @@ function focusFeedbackComposer() {
       </section>
       <aside class="right-panels">
         <StoryMemory
-          v-model="draft.summaries"
-          :story="draft.story"
+          v-model="activeChapter.summaries"
+          :story="activeChapter.story"
           :busy="summarizing || generating || revisingFeedback"
           :model-available="Boolean(draft.model)"
           :active-summary-id="activeSummaryId"
@@ -110,9 +177,9 @@ function focusFeedbackComposer() {
         />
         <StoryFeedbackPanel
           ref="feedbackPanel"
-          v-model="draft.feedback"
-          :story="draft.story"
-          :revisions="draft.feedbackRevisions"
+          v-model="activeChapter.feedback"
+          :story="activeChapter.story"
+          :revisions="activeChapter.feedbackRevisions"
           :selection="storySelection"
           :busy="summarizing || generating || revisingFeedback || proofreading"
           :model-available="Boolean(draft.model)"

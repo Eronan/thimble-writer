@@ -60,8 +60,65 @@ test('version one drafts gain the optional character appearance field', () => {
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
 })
 
+test('version two story data migrates into chapter one with chapter-scoped context', () => {
+  const migrated = migrateDraftData({
+    schemaVersion: 2,
+    synopsis: 'A global story premise.',
+    story: 'Opening scene.',
+    summaries: [{ id: 'summary-1', source: 'Opening scene.', summary: 'The story began.' }],
+    feedback: [{ id: 'feedback-1', start: 0, source: 'Opening', before: '', after: ' scene.', instruction: 'Check this.' }],
+    feedbackRevisions: [{ id: 'revision-1', instruction: 'Improve it.', before: 'Opening', after: 'A beginning', appliedAt: 10 }],
+  })
+  assert.equal(migrated.activeChapterId, 'chapter-1')
+  assert.deepEqual(migrated.chapters, [{
+    id: 'chapter-1',
+    title: 'Chapter 1',
+    synopsis: '',
+    story: 'Opening scene.',
+    summaries: [{ id: 'summary-1', source: 'Opening scene.', summary: 'The story began.' }],
+    feedback: [{ id: 'feedback-1', start: 0, source: 'Opening', before: '', after: ' scene.', instruction: 'Check this.' }],
+    feedbackRevisions: [{ id: 'revision-1', instruction: 'Improve it.', before: 'Opening', after: 'A beginning', appliedAt: 10 }],
+  }])
+  assert.equal(migrated.synopsis, 'A global story premise.')
+  assert.equal('story' in migrated, false)
+  assert.equal(migrated.structurePrompt, '')
+})
+
+test('version three drafts gain the persisted structure generator prompt', () => {
+  const migrated = migrateDraftData({
+    schemaVersion: 3,
+    chapters: [{
+      id: 'chapter-1',
+      title: 'Chapter 1',
+      synopsis: 'Opening.',
+      story: '',
+      summaries: [],
+      feedback: [],
+      feedbackRevisions: [],
+    }],
+    activeChapterId: 'chapter-1',
+  })
+  assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
+  assert.equal(migrated.structurePrompt, '')
+})
+
 test('current drafts stay stable and unsupported future schema versions fail explicitly', () => {
-  const current = { schemaVersion: DRAFT_SCHEMA_VERSION, synopsis: 'Keep this', characters: [] }
+  const current = {
+    schemaVersion: DRAFT_SCHEMA_VERSION,
+    synopsis: 'Keep this',
+    characters: [],
+    chapters: [{
+      id: 'chapter-1',
+      title: 'Chapter 1',
+      synopsis: '',
+      story: '',
+      summaries: [],
+      feedback: [],
+      feedbackRevisions: [],
+    }],
+    activeChapterId: 'chapter-1',
+    structurePrompt: '',
+  }
   assert.deepEqual(migrateDraftData(current), current)
   assert.throws(
     () => migrateDraftData({ schemaVersion: DRAFT_SCHEMA_VERSION + 1 }),
