@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { getFeedbackDiffLines, locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
-import type { FeedbackRevision } from '~/composables/useStoryWriter'
+import type { FeedbackRevision } from '~/types/storyWriter'
 
 const props = defineProps<{
   story: string

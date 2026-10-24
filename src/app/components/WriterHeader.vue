@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Draft, OllamaModel } from '~/composables/useStoryWriter'
+import type { Draft } from '~/types/storyWriter'
+import type { OllamaModel } from '~/clients/ollamaClient'
 
 defineProps<{
   models: OllamaModel[]

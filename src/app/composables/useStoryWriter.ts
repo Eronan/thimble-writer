@@ -1,10 +1,17 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
-import { locateSection, paragraphsWithOffsets, planStorySections, type StorySectionSummary } from '~/utils/storySections'
+import { locateSection, paragraphsWithOffsets, type StorySectionSummary } from '~/utils/storySections'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 import { ollamaClient, ollamaRequestOptions, type OllamaModel } from '~/clients/ollamaClient'
 import { draftStorage } from '~/clients/draftStorage'
-import { buildStoryContext, charsPerToken, makeStoryRequest, summaryReplyTokens, summarySystem } from '~/utils/storyPrompt'
+import { buildStoryContext, makeStoryRequest } from '~/utils/storyPrompt'
 import { buildFeedbackRevisionContext } from '~/utils/feedbackRevisionPrompt'
+import {
+  charsForContextBudget,
+  FEEDBACK_CONTEXT_RESERVE_TOKENS,
+  loreSelectorBudget,
+} from '~/utils/contextBudget'
+import { migrateDraftData, DRAFT_SCHEMA_VERSION } from '~/utils/draftSchema'
+import type { Draft, FeedbackRevision } from '~/types/storyWriter'
 import {
   fitLoreEntries,
   loreSelectionResponseFormat,
@@ -12,46 +19,19 @@ import {
   parseLoreSelectionResponse,
   prepareLoreEntries,
 } from '~/utils/storyLore'
-import {
-  anchorProofreadSuggestions,
-  parseProofreadResponse,
-  proofreadResponseFormat,
-  splitStoryForProofreading,
-  type AnchoredProofreadSuggestion,
-} from '~/utils/storyProofread'
-
-export type PromptMode = 'instruct' | 'continue'
-
-export type Draft = {
-  lore: string
-  story: string
-  summaries: StorySectionSummary[]
-  feedback: StoryFeedback[]
-  feedbackRevisions: FeedbackRevision[]
-  prompt: string
-  model: string
-  mode: PromptMode
-  temperature: number
-  maxTokens: number
-  numCtx: number
-  repeatPenalty: number
-  writerParagraphs: number
-  sectionParagraphs: number
-}
-
-export type FeedbackRevision = {
-  id: string
-  instruction: string
-  before: string
-  after: string
-  appliedAt: number
-}
+import { formatLoreForPrompt } from '~/utils/loreWorkspace'
+import { useStoryProofreading } from './useStoryProofreading'
+import { useStorySummaries } from './useStorySummaries'
 
 const draftSaveDelay = 500
 // The continuation should see the actual recent wording for voice and immediate continuity;
 // summaries are a memory aid for older events, not a replacement for the current scene.
 const defaults: Draft = {
-  lore: '',
+  schemaVersion: DRAFT_SCHEMA_VERSION,
+  synopsis: '',
+  guidance: '',
+  characters: [],
+  setting: [],
   story: '',
   summaries: [],
   feedback: [],
@@ -74,15 +54,53 @@ export function useStoryWriter() {
   const generating = ref(false)
   const error = ref('')
   const status = ref('')
-  const summarizing = ref(false)
   const revisingFeedback = ref(false)
-  const proofreading = ref(false)
   const canUndo = ref(false)
   const previousStory = ref('')
   let previousFeedback: StoryFeedback[] = []
   let previousFeedbackRevisions: FeedbackRevision[] = []
   const abortController = shallowRef<AbortController | null>(null)
   const selectedModelSize = computed(() => models.value.find(model => model.name === draft.model)?.size)
+  const contextPreview = computed(() => {
+    const context = buildStoryContext({
+      lore: formatLoreForPrompt(draft),
+      prompt: draft.prompt,
+      story: draft.story,
+      summaries: draft.summaries,
+      maxTokens: draft.maxTokens,
+      numCtx: draft.numCtx,
+      writerParagraphs: draft.writerParagraphs,
+    })
+    const selectorContext = [
+      context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
+      draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
+    ].filter(Boolean).join('\n\n')
+    const selectorBudget = loreSelectorBudget(
+      draft.numCtx,
+      selectorContext.length,
+      loreSelectionSystem.length,
+    )
+    const loreText = formatLoreForPrompt(draft)
+    let loreEntries = ''
+    let loreError = ''
+    if (loreText.trim()) {
+      try {
+        loreEntries = prepareLoreEntries(loreText, selectorBudget.loreEntriesChars).text
+      } catch (cause) {
+        loreError = cause instanceof Error ? cause.message : 'Lore entries cannot fit the selection context.'
+      }
+    }
+    return {
+      budget: context.budget,
+      story: context.story,
+      summaries: context.summaries,
+      prompt: draft.prompt.trim(),
+      loreEntries,
+      loreError,
+      loreSelectorInputChars: selectorBudget.inputChars,
+      loreGenerationLimitChars: context.loreBudget,
+    }
+  })
   let readyToSave = false
   let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -112,7 +130,7 @@ export function useStoryWriter() {
     try {
       const saved = await draftStorage.load()
       if (saved) {
-        const parsed = JSON.parse(saved)
+        const parsed = migrateDraftData(JSON.parse(saved))
         Object.assign(draft, defaults, parsed)
         // Validate collections separately so older browser drafts can be upgraded safely.
         draft.summaries = Array.isArray(parsed.summaries)
@@ -176,65 +194,20 @@ export function useStoryWriter() {
     }
   }
 
-  async function summarizeOlderSections(story = draft.story, flush = true) {
-    if (summarizing.value || generating.value) return
-    if (!draft.model) {
-      error.value = 'Choose an Ollama model before summarizing story sections.'
-      return
-    }
-    summarizing.value = true
-    error.value = ''
-    try {
-      const sourceBudget = Math.max(300, Math.floor((draft.numCtx - summaryReplyTokens - 200) * charsPerToken))
-      const sources = planStorySections(
-        story,
-        draft.summaries,
-        Math.max(1, Math.floor(draft.writerParagraphs) || defaults.writerParagraphs),
-        Math.max(1, Math.floor(draft.sectionParagraphs) || defaults.sectionParagraphs),
-        flush,
-        sourceBudget,
-      )
-      // Automatic summaries wait for completed sections to avoid compressing the active scene.
-      // Manual summarizing flushes eligible prose because an explicit user action means "do it now".
-      if (!sources.length) {
-        if (flush) status.value = 'No older sections need summarizing yet'
-        return
-      }
-      status.value = 'Summarizing older story sections…'
-      let added = 0
-      for (const source of sources) {
-        if (source.length > sourceBudget) {
-          throw new Error('A paragraph is longer than the summarizer context budget. Increase the context size or split that paragraph.')
-        }
-        const response = await ollamaClient.chat({
-          model: draft.model,
-          options: ollamaRequestOptions(draft, {
-            temperature: 0.3,
-            maxTokens: summaryReplyTokens,
-            repeatPenalty: null,
-          }),
-          messages: [
-            { role: 'system', content: summarySystem },
-            { role: 'user', content: `Story section:\n${source}\n\nSummary:` },
-          ],
-        })
-        const summary = response.replace(/\s+/g, ' ').trim()
-        if (!summary) throw new Error('Ollama returned an empty section summary.')
-        draft.summaries.push({
-          id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-          source,
-          summary,
-        })
-        added++
-      }
-      status.value = added ? `Summarized ${added} older section${added === 1 ? '' : 's'}` : 'No older sections need summarizing yet'
-    } catch (cause) {
-      error.value = cause instanceof Error ? `Summary failed: ${cause.message}` : 'Summary failed.'
-      status.value = ''
-    } finally {
-      summarizing.value = false
-    }
-  }
+  const { summarizing, summarizeOlderSections } = useStorySummaries({
+    draft,
+    generating,
+    error,
+    status,
+  })
+  const { proofreading, proofreadStory } = useStoryProofreading({
+    draft,
+    generating,
+    summarizing,
+    revisingFeedback,
+    error,
+    status,
+  })
 
   function addFeedback(selection: { start: number; end: number; text: string }, instruction: string) {
     const { start, end, text } = selection
@@ -313,13 +286,17 @@ export function useStoryWriter() {
         ].join('\n')
         const user = buildFeedbackRevisionContext({
           system,
-          lore: draft.lore,
+          lore: formatLoreForPrompt(draft),
           summaries: sectionSummaries,
           surroundingBefore: draft.story.slice(contextStart, range.start),
           surroundingAfter: draft.story.slice(range.end, contextEnd),
           selectedPassage: comment.source,
           instruction: comment.instruction,
-          maxChars: Math.floor((draft.numCtx - draft.maxTokens - 250) * charsPerToken),
+          maxChars: charsForContextBudget(
+            draft.numCtx,
+            draft.maxTokens,
+            FEEDBACK_CONTEXT_RESERVE_TOKENS,
+          ),
         })
         const response = await ollamaClient.chat({
           model: draft.model,
@@ -357,120 +334,6 @@ export function useStoryWriter() {
     }
   }
 
-  async function proofreadStory() {
-    if (proofreading.value || generating.value || summarizing.value || revisingFeedback.value) return
-    if (!draft.model) {
-      error.value = 'Choose an Ollama model before proofreading.'
-      return
-    }
-    if (!draft.story.trim()) {
-      status.value = 'Write some story text before proofreading.'
-      return
-    }
-    const proofreadMaxTokens = Math.min(Math.max(draft.maxTokens, 1200), Math.max(1, draft.numCtx - 256))
-    const availableInputChars = Math.floor((draft.numCtx - proofreadMaxTokens - 300) * charsPerToken)
-    if (availableInputChars < 1) {
-      error.value = 'The context size is too small for proofreading with the current output limit.'
-      return
-    }
-    const chunkBudget = Math.min(2000, availableInputChars)
-
-    proofreading.value = true
-    error.value = ''
-    status.value = 'Preparing story for proofreading…'
-    try {
-      const storySnapshot = draft.story
-      const chunks = splitStoryForProofreading(storySnapshot, chunkBudget, draft.summaries)
-      const suggestions: AnchoredProofreadSuggestion[] = []
-      let skipped = 0
-      let truncatedResponses = 0
-      for (const [index, chunk] of chunks.entries()) {
-        status.value = chunks.length > 1
-          ? `Proofreading section ${index + 1} of ${chunks.length}…`
-          : 'Proofreading story…'
-        const response = await ollamaClient.chat({
-          model: draft.model,
-          options: ollamaRequestOptions(draft, {
-            temperature: Math.min(draft.temperature, 0.2),
-            maxTokens: proofreadMaxTokens,
-            repeatPenalty: null,
-          }),
-          format: proofreadResponseFormat,
-          messages: [
-            {
-              role: 'system',
-              content: [
-                'You are a careful fiction proofreader. Identify only clear spelling, grammar, punctuation, or wording errors; do not rewrite for subjective style preferences.',
-                'Return a structured comments list. Each quote must be an exact, contiguous passage from the story and should be as short as possible while identifying the issue.',
-                'The before and after fields must be exact adjacent text immediately before and after the quote, each no longer than 80 characters. Use them to disambiguate repeated quotes.',
-                'The story summaries are context only. Do not proofread them or return comments about them.',
-                'Return at most three comments for this passage. Focus on the clearest, most important errors.',
-                'Keep issue and suggestion brief, with a suggested correction of no more than 20 words. Do not change the story yourself.',
-              ].join(' '),
-            },
-            {
-              role: 'user',
-              content: [
-                chunk.summaries.length
-                  ? `Relevant story summaries (context only):\n${chunk.summaries.map(summary => `- ${summary}`).join('\n')}`
-                  : '',
-                `Proofread only this story passage:\n\n${chunk.text}`,
-              ].filter(Boolean).join('\n\n'),
-            },
-          ],
-        })
-        const parsed = parseProofreadResponse(response)
-        if (parsed.incomplete) truncatedResponses++
-        const anchored = anchorProofreadSuggestions(chunk, parsed.comments)
-        suggestions.push(...anchored.comments)
-        skipped += anchored.skipped
-      }
-
-      const occupied = draft.feedback
-        .map(comment => locateFeedback(storySnapshot, comment))
-        .filter((range): range is NonNullable<typeof range> => range !== null)
-      if (draft.story !== storySnapshot) {
-        throw new Error('The story changed during proofreading. No comments were added; run proofreading again.')
-      }
-      let added = 0
-      for (const suggestion of suggestions) {
-        const overlaps = occupied.some(range => suggestion.start < range.end && suggestion.end > range.start)
-        if (overlaps) {
-          skipped++
-          continue
-        }
-        const comment: StoryFeedback = {
-          id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-          start: suggestion.start,
-          source: suggestion.quote,
-          before: storySnapshot.slice(Math.max(0, suggestion.start - 80), suggestion.start),
-          after: storySnapshot.slice(suggestion.end, suggestion.end + 80),
-          instruction: `${suggestion.issue} Suggested correction: ${suggestion.suggestion}`,
-        }
-        // Proofreading proposes edits as reviewable comments so the writer stays in control of
-        // which changes, if any, are applied to the canonical story.
-        draft.feedback.push(comment)
-        occupied.push({ start: suggestion.start, end: suggestion.end })
-        added++
-      }
-      const incompleteNotice = truncatedResponses
-        ? `; recovered complete comments from ${truncatedResponses} truncated response${truncatedResponses === 1 ? '' : 's'}`
-        : ''
-      status.value = added
-        ? `Proofreading added ${added} comment${added === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} unanchored or overlapping suggestion${skipped === 1 ? '' : 's'}` : ''}${incompleteNotice}`
-        : skipped
-          ? `No comments added; skipped ${skipped} suggestion${skipped === 1 ? '' : 's'} that could not be safely anchored${incompleteNotice}`
-          : truncatedResponses
-            ? `Proofreading response was truncated and contained no complete comments${incompleteNotice}`
-            : 'Proofreading found no clear issues'
-    } catch (cause) {
-      error.value = cause instanceof Error ? `Proofreading failed: ${cause.message}` : 'Proofreading failed.'
-      status.value = ''
-    } finally {
-      proofreading.value = false
-    }
-  }
-
   async function writeNext() {
     if (generating.value) {
       abortController.value?.abort()
@@ -494,8 +357,9 @@ export function useStoryWriter() {
     // The user's rule is structural: a new line starts a paragraph; punctuation alone does not.
     const startsNewParagraph = /(?:\r\n|\n)[\t ]*$/.test(baseStory)
     const alreadyHasParagraphBreak = /(?:\r\n|\n){2,}[\t ]*$/.test(baseStory)
+    const loreText = formatLoreForPrompt(draft)
     const context = buildStoryContext({
-      lore: draft.lore,
+      lore: loreText,
       prompt: draft.prompt,
       story: baseStory,
       summaries: draft.summaries,
@@ -509,24 +373,26 @@ export function useStoryWriter() {
 
     try {
       let omittedLoreEntries = 0
-      if (draft.lore.trim()) {
+      if (loreText.trim()) {
         // Summaries establish where the story is now, and the prompt establishes what comes next;
         // together they let this pass select relevant facts without treating old lore as plot.
         // Send every numbered entry, clipping entries evenly only when the selector window needs it.
         status.value = 'Selecting relevant lore…'
-        const selectorMaxTokens = Math.min(256, Math.max(1, draft.numCtx - 300))
-        const selectorInputBudget = Math.floor((draft.numCtx - selectorMaxTokens - 200) * charsPerToken)
         const selectorContext = [
           context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
           draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
         ].filter(Boolean).join('\n\n')
-        const loreInputBudget = selectorInputBudget - loreSelectionSystem.length - selectorContext.length - 180
-        const preparedLore = prepareLoreEntries(draft.lore, loreInputBudget)
+        const selectorBudget = loreSelectorBudget(
+          draft.numCtx,
+          selectorContext.length,
+          loreSelectionSystem.length,
+        )
+        const preparedLore = prepareLoreEntries(loreText, selectorBudget.loreEntriesChars)
         const selectionResponse = await ollamaClient.chat({
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: Math.min(draft.temperature, 0.3),
-            maxTokens: selectorMaxTokens,
+            maxTokens: selectorBudget.outputTokens,
             repeatPenalty: null,
           }),
           format: loreSelectionResponseFormat,
@@ -547,7 +413,7 @@ export function useStoryWriter() {
       }
 
       if (context.lore) status.value = 'Writing…'
-      else if (!draft.lore.trim()) status.value = 'Writing…'
+      else if (!loreText.trim()) status.value = 'Writing…'
       const request = makeStoryRequest({
         mode: draft.mode,
         prompt: draft.prompt,
@@ -634,6 +500,7 @@ export function useStoryWriter() {
       draft.summaries = draft.summaries.filter(section => section.id !== id)
     },
     selectedModelSize,
+    contextPreview,
     refreshModels,
     summarizeOlderSections,
     writeNext,

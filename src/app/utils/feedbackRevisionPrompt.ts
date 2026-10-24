@@ -1,4 +1,5 @@
 import { fitLoreEntries, splitLoreEntries } from './storyLore.ts'
+import { feedbackContextAllocation } from './contextBudget.ts'
 
 export type FeedbackRevisionContextInput = {
   system: string
@@ -40,9 +41,8 @@ export function buildFeedbackRevisionContext(input: FeedbackRevisionContextInput
     throw new Error('The selected passage and feedback exceed the available model context. Increase the context size or shorten the selection.')
   }
 
-  const nearbyBudget = Math.floor(availableChars * 0.5)
-  const summaryBudget = Math.floor(availableChars * 0.25)
-  const loreBudget = availableChars - nearbyBudget - summaryBudget
+  const { nearbyChars: nearbyBudget, summaryChars: summaryBudget, loreChars: loreBudget } =
+    feedbackContextAllocation(availableChars)
   const nearby = fitNearbyText(input.surroundingBefore, input.surroundingAfter, nearbyBudget)
   const summaries: string[] = []
   let summariesUsed = 0

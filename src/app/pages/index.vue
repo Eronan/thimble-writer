@@ -11,6 +11,7 @@ const {
   status,
   canUndo,
   selectedModelSize,
+  contextPreview,
   refreshModels,
   summarizeOlderSections,
   removeSummary,
@@ -23,6 +24,7 @@ const {
 } = useStoryWriter()
 
 const settingsOpen = ref(false)
+const activeWorkspace = ref<'lore' | 'story'>('story')
 const activeSummaryId = ref<string | null>(null)
 const activeFeedbackId = ref<string | null>(null)
 const storySelection = ref<{ start: number; end: number; text: string } | null>(null)
@@ -48,8 +50,30 @@ function focusFeedbackComposer() {
       @refresh="refreshModels"
     />
 
-    <div class="workspace">
-      <LorePanel v-model="draft.lore" />
+    <nav class="workspace-tabs" aria-label="Workspace">
+      <button
+        type="button"
+        :aria-pressed="activeWorkspace === 'lore'"
+        :class="{ active: activeWorkspace === 'lore' }"
+        @click="activeWorkspace = 'lore'"
+      >Lore</button>
+      <button
+        type="button"
+        :aria-pressed="activeWorkspace === 'story'"
+        :class="{ active: activeWorkspace === 'story' }"
+        @click="activeWorkspace = 'story'"
+      >Story Generator</button>
+    </nav>
+
+    <LorePanel
+      v-if="activeWorkspace === 'lore'"
+      v-model:synopsis="draft.synopsis"
+      v-model:guidance="draft.guidance"
+      v-model:characters="draft.characters"
+      v-model:setting="draft.setting"
+    />
+
+    <div v-else class="workspace">
       <section class="story-panel">
         <StoryEditor
           v-model="draft.story"
@@ -69,6 +93,7 @@ function focusFeedbackComposer() {
           :status="status"
           :generating="generating"
           :model-available="Boolean(draft.model)"
+          :context-preview="contextPreview"
           @write="writeNext"
         />
       </section>

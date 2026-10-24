@@ -23,6 +23,9 @@ test('context keeps recent prose verbatim and includes summaries for older secti
   assert.equal(context.lore, '')
   assert.ok(context.loreBudget > 0)
   assert.equal(context.continueCurrentParagraph, true)
+  assert.equal(context.budget.storyChars, context.story.length)
+  assert.equal(context.budget.summaryChars, context.summaries.length)
+  assert.equal(context.budget.loreLimitChars, context.loreBudget)
 })
 
 test('context marks same-line continuation separately from a new line', () => {

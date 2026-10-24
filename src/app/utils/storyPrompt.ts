@@ -1,10 +1,14 @@
 import { ollamaRequestOptions, type OllamaChatMessage, type OllamaRequestOptions, type OllamaSettings } from '../clients/ollamaClient.ts'
 import { locateSection, paragraphsWithOffsets, type StorySectionSummary } from './storySections.ts'
+import {
+  charsForContextBudget,
+  LORE_BUDGET_SHARE,
+  STORY_TEXT_BUDGET_SHARE,
+  STORY_CONTEXT_RESERVE_TOKENS,
+  STORY_PROMPT_RESERVE_CHARS,
+} from './contextBudget.ts'
 
 export const summarySystem = 'Summarize this story section in one or two concise sentences, in past tense. Name the characters and preserve important events and changes. Reply with only the summary.'
-export const summaryReplyTokens = 120
-export const charsPerToken = 3.5
-export const summaryReplyReserve = 180
 
 export type StoryPromptMode = 'instruct' | 'continue'
 
@@ -24,6 +28,13 @@ export type StoryContext = {
   summaries: string
   story: string
   continueCurrentParagraph: boolean
+  budget: {
+    inputChars: number
+    storyLimitChars: number
+    storyChars: number
+    loreLimitChars: number
+    summaryChars: number
+  }
 }
 
 type StoryRequestInput = OllamaSettings & {
@@ -39,8 +50,12 @@ export type StoryRequest =
 export function buildStoryContext(input: StoryContextInput): StoryContext {
   // Reserve room for the requested output and summary instructions so long drafts do not crowd
   // out the model's ability to finish a useful response.
-  const inputTokens = Math.max(0, input.numCtx - input.maxTokens - summaryReplyReserve)
-  let remainingChars = Math.max(0, Math.floor(inputTokens * charsPerToken))
+  const inputChars = charsForContextBudget(
+    input.numCtx,
+    input.maxTokens,
+    STORY_CONTEXT_RESERVE_TOKENS,
+  )
+  let remainingChars = inputChars
   const prompt = input.prompt.trim()
   const paragraphs = paragraphsWithOffsets(input.story)
   const recentParagraphCount = Math.max(1, Math.floor(input.writerParagraphs) || 3)
@@ -54,9 +69,9 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
     !validSummaries.some(({ range }) => range && paragraph.start < range.end && paragraph.end > range.start),
   )
   const uncompressedTextLength = uncompressedParagraphs.reduce((length, paragraph) => length + paragraph.text.length + 2, 0)
-  const fixedChars = prompt.length + summarySystem.length + 180
+  const fixedChars = prompt.length + summarySystem.length + STORY_PROMPT_RESERVE_CHARS
   remainingChars = Math.max(0, remainingChars - fixedChars)
-  const storyBudget = Math.min(uncompressedTextLength, Math.floor(remainingChars * 0.6))
+  const storyBudget = Math.min(uncompressedTextLength, Math.floor(remainingChars * STORY_TEXT_BUDGET_SHARE))
   let storyTail = ''
   let usedStoryChars = 0
 
@@ -81,7 +96,7 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
   // Smaller models cannot reliably use a full lore document; reserve a bounded slice for relevant
   // world facts rather than letting lore displace the current story and its accumulated memory.
   // The actual lore is selected by the separate entry-selection pass before generation.
-  const loreBudget = Math.floor(remainingChars * 0.45)
+  const loreBudget = Math.floor(remainingChars * LORE_BUDGET_SHARE)
   remainingChars -= loreBudget
 
   const selectedSummaries: string[] = []
@@ -100,6 +115,13 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
     summaries: selectedSummaries.join('\n'),
     story: storyTail,
     continueCurrentParagraph: Boolean(input.story.trim()) && !/(?:\r\n|\n)[\t ]*$/.test(input.story),
+    budget: {
+      inputChars,
+      storyLimitChars: storyBudget,
+      storyChars: storyTail.length,
+      loreLimitChars: loreBudget,
+      summaryChars: selectedSummaries.join('\n').length,
+    },
   }
 }
 
