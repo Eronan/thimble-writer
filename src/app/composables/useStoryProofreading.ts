@@ -54,7 +54,8 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
         status.value = chunks.length > 1
           ? `Proofreading section ${index + 1} of ${chunks.length}…`
           : 'Proofreading story…'
-        const response = await ollamaClient.chat({
+        const parsed = await ollamaClient.chat({
+          label: 'Proofread',
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: Math.min(draft.temperature, 0.2),
@@ -62,6 +63,7 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
             repeatPenalty: null,
           }),
           format: proofreadResponseFormat,
+          parse: parseProofreadResponse,
           messages: [
             {
               role: 'system',
@@ -85,7 +87,6 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
             },
           ],
         })
-        const parsed = parseProofreadResponse(response)
         if (parsed.incomplete) truncatedResponses++
         skipped += parsed.skipped
         const anchored = anchorProofreadSuggestions(chunk, parsed.comments)

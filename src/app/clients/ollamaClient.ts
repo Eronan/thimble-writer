@@ -1,3 +1,5 @@
+import { appendDebugResponse, finishDebugEntry, startDebugEntry } from './debugLog.ts'
+
 export type OllamaModel = {
   name: string
   size?: number
@@ -46,6 +48,8 @@ type ChatRequest = {
   options: OllamaRequestOptions
   format?: 'json' | Record<string, unknown>
   signal?: AbortSignal
+  /** Names this request in the Developer tab. */
+  label?: string
 }
 
 type GenerateRequest = {
@@ -53,7 +57,26 @@ type GenerateRequest = {
   prompt: string
   options: OllamaRequestOptions
   signal?: AbortSignal
+  label?: string
 }
+
+type ChatReply = {
+  message?: { content?: string }
+  done_reason?: string
+  prompt_eval_count?: number
+  eval_count?: number
+}
+
+function replyMeta(item: { done_reason?: unknown; prompt_eval_count?: unknown; eval_count?: unknown }) {
+  return {
+    doneReason: typeof item.done_reason === 'string' ? item.done_reason : undefined,
+    promptTokens: typeof item.prompt_eval_count === 'number' ? item.prompt_eval_count : undefined,
+    replyTokens: typeof item.eval_count === 'number' ? item.eval_count : undefined,
+  }
+}
+
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error)
+const isAbortError = (error: unknown) => (error as { name?: string } | null)?.name === 'AbortError'
 
 function createOllamaClient(baseUrl: string) {
   async function post(path: string, body: unknown, signal?: AbortSignal) {
@@ -71,6 +94,7 @@ function createOllamaClient(baseUrl: string) {
     response: Response,
     extractText: (item: Record<string, unknown>) => string,
     onText: (text: string) => void,
+    onDone?: (item: Record<string, unknown>) => void,
   ) {
     if (!response.body) throw new Error('Ollama did not return a response stream.')
     const reader = response.body.getReader()
@@ -84,6 +108,7 @@ function createOllamaClient(baseUrl: string) {
       if (item.error) throw new Error(String(item.error))
       const text = extractText(item)
       if (text) onText(text)
+      if (item.done) onDone?.(item)
     }
 
     while (true) {
@@ -98,6 +123,63 @@ function createOllamaClient(baseUrl: string) {
     if (buffer.trim()) consumeLine(buffer)
   }
 
+  /** With `parse`, the model's text is turned into structured data; a failure is logged against this request. */
+  function chat<T>(request: ChatRequest & { parse: (text: string) => T }): Promise<T>
+  function chat(request: ChatRequest): Promise<string>
+  async function chat(request: ChatRequest & { parse?: (text: string) => unknown }): Promise<unknown> {
+    const { model, messages, options, format, signal, label, parse } = request
+    const entry = startDebugEntry({
+      label: label ?? 'chat',
+      endpoint: '/api/chat',
+      model,
+      streamed: false,
+      request: { messages, options, format },
+    })
+    try {
+      const response = await post('/api/chat', { model, messages, options, format, stream: false }, signal)
+      const data = await response.json() as ChatReply
+      const text = data.message?.content ?? ''
+      entry.meta = replyMeta(data)
+      finishDebugEntry(entry, 'ok', { response: text })
+      if (!parse) return text
+      try {
+        return parse(text)
+      } catch (error) {
+        finishDebugEntry(entry, 'parse-failed', { error: errorMessage(error) })
+        throw error
+      }
+    } catch (error) {
+      if (entry.status === 'running') {
+        finishDebugEntry(entry, isAbortError(error) ? 'aborted' : 'error', { error: errorMessage(error) })
+      }
+      throw error
+    }
+  }
+
+  async function stream(
+    path: string,
+    body: Record<string, unknown>,
+    init: { label: string; model: string; request: { messages?: OllamaChatMessage[]; prompt?: string; options: OllamaRequestOptions } },
+    signal: AbortSignal | undefined,
+    extractText: (item: Record<string, unknown>) => string,
+    onText: (text: string) => void,
+  ) {
+    const entry = startDebugEntry({ ...init, endpoint: path, streamed: true })
+    try {
+      const response = await post(path, body, signal)
+      await readStream(response, extractText, (text) => {
+        appendDebugResponse(entry, text)
+        onText(text)
+      }, (item) => {
+        entry.meta = replyMeta(item)
+      })
+      finishDebugEntry(entry, 'ok')
+    } catch (error) {
+      finishDebugEntry(entry, isAbortError(error) ? 'aborted' : 'error', { error: errorMessage(error) })
+      throw error
+    }
+  }
+
   return {
     baseUrl,
 
@@ -108,23 +190,18 @@ function createOllamaClient(baseUrl: string) {
       return (data.models ?? []).map(model => ({ name: model.name, size: model.size }))
     },
 
-    async chat({ model, messages, options, format, signal }: ChatRequest): Promise<string> {
-      const response = await post('/api/chat', { model, messages, options, format, stream: false }, signal)
-      const data = await response.json() as { message?: { content?: string } }
-      return data.message?.content ?? ''
+    chat,
+
+    async streamChat({ model, messages, options, signal, label }: ChatRequest, onText: (text: string) => void) {
+      await stream('/api/chat', { model, messages, options, stream: true },
+        { label: label ?? 'chat (streamed)', model, request: { messages, options } }, signal,
+        item => (item.message as { content?: string } | undefined)?.content ?? '', onText)
     },
 
-    async streamChat({ model, messages, options, signal }: ChatRequest, onText: (text: string) => void) {
-      const response = await post('/api/chat', { model, messages, options, stream: true }, signal)
-      await readStream(response, item => {
-        const message = item.message as { content?: string } | undefined
-        return message?.content ?? ''
-      }, onText)
-    },
-
-    async streamGenerate({ model, prompt, options, signal }: GenerateRequest, onText: (text: string) => void) {
-      const response = await post('/api/generate', { model, prompt, options, stream: true }, signal)
-      await readStream(response, item => typeof item.response === 'string' ? item.response : '', onText)
+    async streamGenerate({ model, prompt, options, signal, label }: GenerateRequest, onText: (text: string) => void) {
+      await stream('/api/generate', { model, prompt, options, stream: true },
+        { label: label ?? 'generate (streamed)', model, request: { prompt, options } }, signal,
+        item => typeof item.response === 'string' ? item.response : '', onText)
     },
   }
 }

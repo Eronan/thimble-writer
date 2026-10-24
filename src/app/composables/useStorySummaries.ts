@@ -47,6 +47,7 @@ export function useStorySummaries(options: StorySummaryOptions) {
           throw new Error('A paragraph is longer than the summarizer context budget. Increase the context size or split that paragraph.')
         }
         const response = await ollamaClient.chat({
+          label: 'Section summary',
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: 0.3,

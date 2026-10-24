@@ -338,6 +338,7 @@ export function useStoryWriter() {
           ),
         })
         const response = await ollamaClient.chat({
+          label: 'Apply comment',
           model: draft.model,
           options: ollamaRequestOptions(draft, { temperature: Math.min(draft.temperature, 0.5) }),
           messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
@@ -431,7 +432,8 @@ export function useStoryWriter() {
           loreSelectionSystem.length,
         )
         const preparedLore = prepareLoreEntries(loreText, selectorBudget.loreEntriesChars)
-        const selectionResponse = await ollamaClient.chat({
+        const selectedNumbers = await ollamaClient.chat({
+          label: 'Lore selection',
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: Math.min(draft.temperature, 0.3),
@@ -439,6 +441,7 @@ export function useStoryWriter() {
             repeatPenalty: null,
           }),
           format: loreSelectionResponseFormat,
+          parse: text => parseLoreSelectionResponse(text, preparedLore.entries),
           signal: controller.signal,
           messages: [
             { role: 'system', content: loreSelectionSystem },
@@ -448,7 +451,6 @@ export function useStoryWriter() {
             },
           ],
         })
-        const selectedNumbers = parseLoreSelectionResponse(selectionResponse, preparedLore.entries)
         const fittedLore = fitLoreEntries(preparedLore.entries, selectedNumbers, context.loreBudget)
         context.lore = fittedLore.text
         omittedLoreEntries = fittedLore.omitted
@@ -474,6 +476,7 @@ export function useStoryWriter() {
       }
       if (request.kind === 'generate') {
         await ollamaClient.streamGenerate({
+          label: 'Write next (continue mode)',
           model: draft.model,
           prompt: request.prompt,
           options: request.options,
@@ -481,6 +484,7 @@ export function useStoryWriter() {
         }, appendGeneratedText)
       } else {
         await ollamaClient.streamChat({
+          label: 'Write next',
           model: draft.model,
           messages: request.messages,
           options: request.options,
@@ -576,6 +580,7 @@ export function useStoryWriter() {
     revisingFeedback,
     proofreading,
     canUndo,
+    previousStory,
     isBusy,
     fixingSynopsis,
     generatingSynopsisId,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { getFeedbackDiffLines, locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
+import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 import type { FeedbackRevision } from '~/types/storyWriter'
 
 const props = defineProps<{
@@ -20,6 +20,7 @@ const emit = defineEmits<{
   proofread: []
   remove: [id: string]
   hover: [id: string | null]
+  showChanges: []
 }>()
 
 const instruction = ref<HTMLTextAreaElement | null>(null)
@@ -134,35 +135,10 @@ defineExpose({ focusInstruction })
       </div>
       <p v-if="!feedback.length && !revisions.length" class="feedback-empty">Your passage-specific comments will appear here.</p>
 
-      <details v-if="revisions.length" class="feedback-revision-history">
-        <summary>Applied changes <span>{{ revisions.length }}</span></summary>
-        <article v-for="(revision, index) in [...revisions].reverse()" :key="revision.id" class="feedback-revision">
-          <header>
-            <span class="memory-number">CHANGE {{ revisions.length - index }}</span>
-            <time :datetime="new Date(revision.appliedAt).toISOString()">{{ new Date(revision.appliedAt).toLocaleString() }}</time>
-          </header>
-          <p class="feedback-revision-instruction">{{ revision.instruction }}</p>
-          <div class="feedback-diff">
-            <!-- Show unchanged prose once to reduce noise; pair only real edits and highlight their
-                 individual characters so the user can judge exactly what feedback changed. -->
-            <div v-for="(line, lineIndex) in getFeedbackDiffLines(revision.before, revision.after)" :key="lineIndex" class="feedback-diff-pair">
-              <div v-if="!line.changed" class="feedback-diff-line feedback-diff-context">
-                <code>{{ line.before }}</code>
-              </div>
-              <template v-else>
-              <div class="feedback-diff-line feedback-diff-before">
-                <span>Before</span>
-                <code><template v-for="(run, runIndex) in line.runs" :key="`before-${runIndex}`"><mark v-if="run.type === 'removed'">{{ run.value }}</mark><template v-else-if="run.type === 'equal'">{{ run.value }}</template></template></code>
-              </div>
-              <div class="feedback-diff-line feedback-diff-after">
-                <span>After</span>
-                <code><template v-for="(run, runIndex) in line.runs" :key="`after-${runIndex}`"><mark v-if="run.type === 'added'">{{ run.value }}</mark><template v-else-if="run.type === 'equal'">{{ run.value }}</template></template></code>
-              </div>
-              </template>
-            </div>
-          </div>
-        </article>
-      </details>
+      <p v-if="revisions.length" class="feedback-applied-note">
+        {{ revisions.length }} applied change{{ revisions.length === 1 ? '' : 's' }}.
+        <button type="button" class="undo-button" @click="emit('showChanges')">View in Changes</button>
+      </p>
     </div>
   </section>
 </template>

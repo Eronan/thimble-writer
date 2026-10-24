@@ -85,6 +85,7 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
       const chunks = splitText(chapter.value.story, sourceBudget)
       if (chunks.length === 1) {
         const synopsis = await ollamaClient.chat({
+          label: 'Chapter synopsis (from text)',
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: 0.2,
@@ -103,6 +104,7 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
         for (const [index, chunk] of chunks.entries()) {
           status.value = `Summarizing story passages (${index + 1}/${chunks.length})…`
           const response = await ollamaClient.chat({
+            label: 'Chapter summary (chunk)',
             model: draft.model,
             options: ollamaRequestOptions(draft, {
               temperature: 0.2,
@@ -141,6 +143,7 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
           for (const [index, batch] of groups.entries()) {
             status.value = `Summarizing story passages (${index + 1}/${groups.length})…`
             const response = await ollamaClient.chat({
+              label: 'Chapter summary (merge)',
               model: draft.model,
               options: ollamaRequestOptions(draft, {
                 temperature: 0.2,
@@ -158,6 +161,7 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
           summaries = next
         }
         const synopsis = await ollamaClient.chat({
+          label: 'Chapter synopsis (from summaries)',
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: 0.2,
@@ -201,6 +205,7 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
         draft.structurePrompt,
       )
       const response = await ollamaClient.chat({
+        label: 'Chapter synopsis (planning)',
         model: draft.model,
         options: ollamaRequestOptions(draft, {
           temperature: 0.4,
@@ -242,7 +247,8 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
         draft.structurePrompt,
         inputChars - allChapterStructureSystem.length,
       )
-      const response = await ollamaClient.chat({
+      const structures = await ollamaClient.chat({
+        label: 'Chapter structure (all chapters)',
         model: draft.model,
         options: ollamaRequestOptions(draft, {
           temperature: 0.4,
@@ -250,12 +256,12 @@ export function useChapterSynopsis(options: ChapterSynopsisOptions) {
           repeatPenalty: null,
         }),
         format: chapterStructureResponseFormat,
+        parse: text => parseChapterStructureResponse(text, draft.chapters.length),
         messages: [
           { role: 'system', content: allChapterStructureSystem },
           { role: 'user', content: context.context },
         ],
       })
-      const structures = parseChapterStructureResponse(response, draft.chapters.length)
       for (let index = 0; index < draft.chapters.length; index += 1) {
         const chapter = draft.chapters[index]!
         const structure = structures[index]!

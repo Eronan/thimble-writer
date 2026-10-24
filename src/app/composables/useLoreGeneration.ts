@@ -73,7 +73,8 @@ export function useLoreGeneration(options: LoreGenerationOptions) {
         target.generationPrompt ?? '',
         inputChars - system.length,
       )
-      const response = await ollamaClient.chat({
+      const generated = await ollamaClient.chat({
+        label: 'Lore generation',
         model: draft.model,
         options: ollamaRequestOptions(draft, {
           temperature: 0.4,
@@ -81,12 +82,12 @@ export function useLoreGeneration(options: LoreGenerationOptions) {
           repeatPenalty: null,
         }),
         format: kind === 'character' ? characterResponseFormat : settingResponseFormat,
+        parse: text => parseGeneratedLoreDetails(text, kind),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: context.context },
         ],
       })
-      const generated = parseGeneratedLoreDetails(response, kind)
       target.name = generated.name
       target.details = generated.details
       if (kind === 'character') {

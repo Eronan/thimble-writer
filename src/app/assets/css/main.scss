@@ -2041,3 +2041,216 @@ h1 {
     box-shadow: 0 0 0 2px #78916c35;
   }
 }
+
+// Story view switch, the Changes view, and the Developer log.
+.story-view-tabs {
+  margin-bottom: 14px;
+}
+.story-view-tabs button {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+}
+.story-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.changes-note {
+  margin: 0;
+  color: #687164;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.story-diff {
+  font-size: 12px;
+  line-height: 1.65;
+}
+.story-diff .feedback-diff-line {
+  grid-template-columns: 56px minmax(0, 1fr);
+  padding: 7px 10px;
+}
+.story-diff .feedback-diff-context {
+  grid-template-columns: minmax(0, 1fr);
+}
+.story-diff .feedback-diff-line > span {
+  font-size: 9px;
+}
+.diff-gap {
+  padding: 5px 10px;
+  border-top: 1px solid #e1e4db;
+  border-bottom: 1px solid #e1e4db;
+  background: #f4f5ef;
+  color: #92968b;
+  font-size: 10px;
+  text-align: center;
+}
+.changes-history {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.changes-history h2 {
+  margin: 0 0 10px;
+  color: #687164;
+  font-size: 12px;
+  font-weight: 600;
+}
+.changes-history h2 span {
+  margin-left: 4px;
+  color: #92968b;
+  font-family: "DM Mono", monospace;
+  font-weight: 400;
+}
+.feedback-applied-note {
+  margin: 8px 0 0;
+  color: #687164;
+  font-size: 11px;
+}
+.workspace-tabs .dev-tab {
+  margin-left: auto;
+  color: #a2a79c;
+}
+.dev-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 30px 0;
+}
+.dev-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+.dev-header h1 {
+  margin: 0;
+}
+.dev-intro {
+  max-width: 62ch;
+  margin: 6px 0 0;
+  color: #687164;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.dev-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+}
+.dev-controls select {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.dev-check span {
+  margin-left: 3px;
+  color: #92968b;
+  font-family: "DM Mono", monospace;
+}
+.dev-empty {
+  margin: 0;
+  color: #92968b;
+  font-size: 12px;
+}
+.dev-entry {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.dev-entry > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.dev-meta {
+  color: #92968b;
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+}
+.dev-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e9ede4;
+  color: #5d6c5f;
+  font-size: 10px;
+  font-weight: 600;
+}
+.dev-parse-failed,
+.dev-error {
+  border-color: #e3b8ae;
+}
+.dev-parse-failed .dev-badge,
+.dev-error .dev-badge {
+  background: #f5ddd7;
+  color: #a2442f;
+}
+.dev-aborted .dev-badge {
+  background: #f1ecd8;
+  color: #85703a;
+}
+.dev-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 12px 14px;
+  border-top: 1px solid var(--line);
+}
+.dev-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 6px;
+  color: #687164;
+  font-size: 11px;
+  font-weight: 600;
+}
+.dev-body h3 span {
+  color: #92968b;
+  font-family: "DM Mono", monospace;
+  font-weight: 400;
+}
+.dev-body h3 button {
+  margin-left: auto;
+}
+.dev-body h4 {
+  margin: 8px 0 3px;
+  color: #92968b;
+  font-family: "DM Mono", monospace;
+  font-size: 9px;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+.dev-body pre {
+  max-height: 340px;
+  margin: 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border: 1px solid #e1e4db;
+  border-radius: 6px;
+  background: #f8f9f4;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dev-hints {
+  margin: 0;
+  padding: 9px 10px 9px 26px;
+  border: 1px solid #ecd9b8;
+  border-radius: 6px;
+  background: #fbf6ea;
+  color: #6e5a2c;
+  font-size: 12px;
+  line-height: 1.55;
+}

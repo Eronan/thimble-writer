@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { countWords } from '~/utils/storyDiff'
+
 const {
   draft,
   activeChapter,
@@ -12,6 +14,7 @@ const {
   error,
   status,
   canUndo,
+  previousStory,
   selectedModelSize,
   contextPreview,
   refreshModels,
@@ -37,7 +40,8 @@ const {
 } = useStoryWriter()
 
 const settingsOpen = ref(false)
-const activeWorkspace = ref<'lore' | 'story' | 'chapters'>('lore')
+const activeWorkspace = ref<'lore' | 'story' | 'chapters' | 'developer'>('lore')
+const storyView = ref<'editor' | 'changes'>('editor')
 const workspacePreferenceReady = ref(false)
 const activeSummaryId = ref<string | null>(null)
 const activeFeedbackId = ref<string | null>(null)
@@ -47,7 +51,7 @@ const feedbackPanel = ref<{ focusInstruction: () => void } | null>(null)
 
 onMounted(() => {
   const savedWorkspace = localStorage.getItem('thimble-writer-workspace')
-  if (savedWorkspace === 'lore' || savedWorkspace === 'story' || savedWorkspace === 'chapters') {
+  if (savedWorkspace === 'lore' || savedWorkspace === 'story' || savedWorkspace === 'chapters' || savedWorkspace === 'developer') {
     activeWorkspace.value = savedWorkspace
   }
   workspacePreferenceReady.value = true
@@ -58,6 +62,18 @@ watch(activeWorkspace, (workspace) => {
     localStorage.setItem('thimble-writer-workspace', workspace)
   }
 })
+
+// A small badge on the Changes tab: how the word count moved since the last prompt.
+const changeBadge = computed(() => {
+  if (!canUndo.value) return ''
+  const delta = countWords(activeChapter.value.story) - countWords(previousStory.value)
+  return delta > 0 ? `+${delta}` : delta < 0 ? `−${Math.abs(delta)}` : '±0'
+})
+
+function undoFromChanges() {
+  undo()
+  storyView.value = 'editor'
+}
 
 function queueFeedback(selection: { start: number; end: number; text: string }, instruction: string) {
   if (addFeedback(selection, instruction)) storySelection.value = null
@@ -72,6 +88,7 @@ function changeChapter(id: string) {
   storySelection.value = null
   activeSummaryId.value = null
   activeFeedbackId.value = null
+  storyView.value = 'editor'
 }
 </script>
 
@@ -105,6 +122,13 @@ function changeChapter(id: string) {
         :class="{ active: activeWorkspace === 'story' }"
         @click="activeWorkspace = 'story'"
       >Story Generator</button>
+      <button
+        type="button"
+        class="dev-tab"
+        :aria-pressed="activeWorkspace === 'developer'"
+        :class="{ active: activeWorkspace === 'developer' }"
+        @click="activeWorkspace = 'developer'"
+      >Developer</button>
     </nav>
 
     <LorePanel
@@ -138,6 +162,8 @@ function changeChapter(id: string) {
       @remove="removeChapter"
     />
 
+    <DeveloperPanel v-else-if="activeWorkspace === 'developer'" />
+
     <div v-else class="workspace">
       <ChapterHeader
         v-model:chapter="activeChapter"
@@ -147,7 +173,24 @@ function changeChapter(id: string) {
         @add="addChapter"
       />
       <section class="story-panel">
+        <nav class="side-panel-tabs story-view-tabs" role="tablist" aria-label="Story view">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="storyView === 'editor'"
+            :class="{ active: storyView === 'editor' }"
+            @click="storyView = 'editor'"
+          >Editor</button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="storyView === 'changes'"
+            :class="{ active: storyView === 'changes' }"
+            @click="storyView = 'changes'"
+          >Changes <span v-if="changeBadge">{{ changeBadge }}</span></button>
+        </nav>
         <StoryEditor
+          v-if="storyView === 'editor'"
           v-model="activeChapter.story"
           :chapter-title="activeChapter.title"
           :can-undo="canUndo"
@@ -162,6 +205,15 @@ function changeChapter(id: string) {
           @comment="focusFeedbackComposer"
           @selection="storySelection = $event"
           @fix-synopsis="fixChapterSynopsis"
+        />
+        <StoryChanges
+          v-else
+          :before="previousStory"
+          :after="activeChapter.story"
+          :can-undo="canUndo"
+          :busy="generating || revisingFeedback"
+          :revisions="activeChapter.feedbackRevisions"
+          @undo="undoFromChanges"
         />
         <PromptComposer
           v-model="draft.prompt"
@@ -235,6 +287,7 @@ function changeChapter(id: string) {
             @proofread="proofreadStory"
             @remove="removeFeedback"
             @hover="activeFeedbackId = $event"
+            @show-changes="storyView = 'changes'"
           />
         </div>
       </aside>

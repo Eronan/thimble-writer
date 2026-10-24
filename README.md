@@ -54,8 +54,13 @@ Everything the model sees is something you can read and edit directly, so a wron
 - **The context preview** shows what will be sent for the next write, before you send it.
 - **Next scene direction** steers each paragraph with one short instruction, instead of a back-and-forth conversation.
 - **Highlight and comment** targets a single passage. The model rewrites only that passage, and you see the change as a diff.
+- **The Changes view** compares your story before the last prompt with the story now, so you can see exactly what a write or an applied comment did. It shows exactly what **Undo** would restore, including any edits you typed since, so Undo is never a surprise.
 - **Undo** is always available, and the story is an ordinary editable document that you can change at any point.
 - **Separate passes** mean a bad result in one place (a wrong summary, say) is fixed there, without redoing everything else.
+
+### Developer tab
+
+The **Developer** tab logs every request sent to Ollama and the raw text that came back, newest first, with the model, timing, token counts, and why generation stopped. When a reply cannot be turned into structured data (for example JSON that is cut off, wrapped in a code fence, or ignores the requested format), the entry is marked and explains the likely cause. The log is kept in memory only and is cleared when you reload the page, because it can contain your whole story.
 
 ### Honest limits
 
