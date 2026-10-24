@@ -2,7 +2,7 @@ import { migrateLoreFields } from './loreWorkspace.ts'
 import type { LoreNote } from './loreWorkspace.ts'
 import type { StoryChapter } from '~/types/storyWriter'
 
-export const DRAFT_SCHEMA_VERSION = 5
+export const DRAFT_SCHEMA_VERSION = 6
 
 type DraftData = Record<string, unknown> & {
   schemaVersion?: unknown
@@ -20,7 +20,7 @@ function versionZeroToOne(data: DraftData): DraftData {
   return next
 }
 
-function migrateEntries(value: unknown): LoreNote[] {
+function migrateEntries(value: unknown, includeCharacterType = false): LoreNote[] {
   if (!Array.isArray(value)) return []
   return value.flatMap((item, index) => {
     if (typeof item !== 'object' || item === null) return []
@@ -29,13 +29,15 @@ function migrateEntries(value: unknown): LoreNote[] {
     const details = typeof entry.details === 'string' ? entry.details : ''
     const appearance = typeof entry.appearance === 'string' ? entry.appearance : ''
     const generationPrompt = typeof entry.generationPrompt === 'string' ? entry.generationPrompt : ''
-    if (!name.trim() && !details.trim() && !appearance.trim() && !generationPrompt.trim()) return []
+    const characterType = typeof entry.characterType === 'string' ? entry.characterType : ''
+    if (!name.trim() && !details.trim() && !appearance.trim() && !generationPrompt.trim() && !characterType.trim()) return []
     return [{
       id: typeof entry.id === 'string' && entry.id ? entry.id : `lore-entry-${index}`,
       name,
       details,
       appearance,
       generationPrompt,
+      ...(includeCharacterType ? { characterType } : {}),
     }]
   })
 }
@@ -137,12 +139,29 @@ function versionFourToFive(data: DraftData): DraftData {
   }
 }
 
+function versionFiveToSix(data: DraftData): DraftData {
+  const addCharacterType = (value: unknown) => Array.isArray(value)
+    ? value.map((entry) => {
+        if (typeof entry !== 'object' || entry === null) return entry
+        const item = entry as Record<string, unknown>
+        return { ...item, characterType: typeof item.characterType === 'string' ? item.characterType : '' }
+      })
+    : []
+  return {
+    ...data,
+    characters: migrateEntries(data.characters, true),
+    setting: migrateEntries(data.setting),
+    schemaVersion: 6,
+  }
+}
+
 const migrations: Record<number, (data: DraftData) => DraftData> = {
   0: versionZeroToOne,
   1: versionOneToTwo,
   2: versionTwoToThree,
   3: versionThreeToFour,
   4: versionFourToFive,
+  5: versionFiveToSix,
 }
 
 function inferVersion(data: DraftData): number {

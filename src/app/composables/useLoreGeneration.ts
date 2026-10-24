@@ -64,7 +64,7 @@ export function useLoreGeneration(options: LoreGenerationOptions) {
         CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS,
       )
       const system = kind === 'character'
-        ? 'Create or refine one useful character for a story bible. Preserve the existing name unless the user explicitly requests a change. Return a JSON object with name, concise core details covering relevant personality, motivation, history, and relationships, and appearance as a separate visual description (empty string when unspecified). Respect established story facts and the user request.'
+        ? 'Create or refine one useful character for a story bible. Preserve the existing name and character type unless the user explicitly requests a change. Return a JSON object with name, characterType (for example protagonist, antagonist, or side character), concise core details covering relevant personality, motivation, history, and relationships, and appearance as a separate visual description (empty string when unspecified). Respect established story facts and the user request.'
         : 'Create or refine one useful setting entry for a story bible. Preserve the existing name unless the user explicitly requests a change. Return a JSON object with a concise name and details covering relevant atmosphere, history, rules, and story significance. Respect established story facts and the user request.'
       const context = buildLoreGenerationContext(
         draft,
@@ -89,7 +89,10 @@ export function useLoreGeneration(options: LoreGenerationOptions) {
       const generated = parseGeneratedLoreDetails(response, kind)
       target.name = generated.name
       target.details = generated.details
-      if (kind === 'character') target.appearance = generated.appearance ?? ''
+      if (kind === 'character') {
+        target.appearance = generated.appearance ?? ''
+        target.characterType = generated.characterType ?? ''
+      }
       status.value = context.clipped
         ? `${kind === 'character' ? 'Character' : 'Setting'} generated (some story context was clipped)`
         : `${kind === 'character' ? 'Character' : 'Setting'} generated`

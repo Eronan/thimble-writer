@@ -4,6 +4,7 @@ export type LoreNote = {
   details: string
   appearance?: string
   generationPrompt?: string
+  characterType?: string
 }
 
 export type LoreFields = {
@@ -23,7 +24,7 @@ export type LoreFieldData = {
   lore?: unknown
 }
 
-function migrateEntries(value: unknown, legacyId: string): LoreNote[] {
+function migrateEntries(value: unknown, legacyId: string, includeCharacterType = false): LoreNote[] {
   if (Array.isArray(value)) {
     return value.flatMap((entry, index) => {
       if (typeof entry !== 'object' || entry === null) return []
@@ -32,7 +33,8 @@ function migrateEntries(value: unknown, legacyId: string): LoreNote[] {
       const details = typeof candidate.details === 'string' ? candidate.details : ''
       const appearance = typeof candidate.appearance === 'string' ? candidate.appearance : ''
       const generationPrompt = typeof candidate.generationPrompt === 'string' ? candidate.generationPrompt : ''
-      if (!name.trim() && !details.trim() && !appearance.trim() && !generationPrompt.trim()) return []
+      const characterType = typeof candidate.characterType === 'string' ? candidate.characterType : ''
+      if (!name.trim() && !details.trim() && !appearance.trim() && !generationPrompt.trim() && !characterType.trim()) return []
       return [{
         id: typeof candidate.id === 'string' && candidate.id
           ? candidate.id
@@ -41,11 +43,12 @@ function migrateEntries(value: unknown, legacyId: string): LoreNote[] {
         details,
         appearance,
         generationPrompt,
+        ...(includeCharacterType ? { characterType } : {}),
       }]
     })
   }
   return typeof value === 'string' && value.trim()
-    ? [{ id: legacyId, name: '', details: value, appearance: '', generationPrompt: '' }]
+    ? [{ id: legacyId, name: '', details: value, appearance: '', generationPrompt: '', ...(includeCharacterType ? { characterType: '' } : {}) }]
     : []
 }
 
@@ -57,7 +60,7 @@ export function migrateLoreFields(data: LoreFieldData): LoreFields {
       ? data.synopsis
       : typeof data.lore === 'string' ? data.lore : '',
     guidance: [guidance.trim(), oldKind].filter(Boolean).join('\n\n'),
-    characters: migrateEntries(data.characters, 'legacy-character'),
+    characters: migrateEntries(data.characters, 'legacy-character', true),
     setting: migrateEntries(data.setting, 'legacy-setting'),
   }
 }
@@ -65,10 +68,13 @@ export function migrateLoreFields(data: LoreFieldData): LoreFields {
 export function formatLoreForPrompt(fields: LoreFields): string {
   const characters = fields.characters.flatMap(entry => {
     const name = entry.name.trim()
+    const characterType = entry.characterType?.trim() ?? ''
     const details = entry.details.trim()
     const appearance = entry.appearance?.trim() ?? ''
     return [
-      [name, details].filter(Boolean).join('\n'),
+      [[name, characterType ? `(${characterType})` : ''].filter(Boolean).join(' '), details]
+        .filter(Boolean)
+        .join('\n'),
       appearance ? [name ? `${name} (appearance)` : 'Character appearance', appearance].join('\n') : '',
     ].filter(Boolean)
   })

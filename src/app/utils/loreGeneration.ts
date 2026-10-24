@@ -2,7 +2,10 @@ import type { Draft } from '~/types/storyWriter'
 import type { LoreNote } from '~/utils/loreWorkspace'
 
 export type LoreGenerationKind = 'character' | 'setting'
-export type GeneratedLoreDetails = Pick<LoreNote, 'name' | 'details'> & { appearance?: string }
+export type GeneratedLoreDetails = Pick<LoreNote, 'name' | 'details'> & {
+  appearance?: string
+  characterType?: string
+}
 
 export const characterResponseFormat = {
   type: 'object',
@@ -10,8 +13,9 @@ export const characterResponseFormat = {
     name: { type: 'string' },
     details: { type: 'string' },
     appearance: { type: 'string' },
+    characterType: { type: 'string' },
   },
-  required: ['name', 'details', 'appearance'],
+  required: ['name', 'details', 'appearance', 'characterType'],
   additionalProperties: false,
 } satisfies Record<string, unknown>
 
@@ -42,6 +46,9 @@ export function buildLoreGenerationContext(
   const heading = kind === 'character' ? 'character' : 'setting'
   const existing = [
     target.name.trim() ? `Name: ${target.name.trim()}` : '',
+    kind === 'character' && target.characterType?.trim()
+      ? `Character type: ${target.characterType.trim()}`
+      : '',
     target.details.trim() ? `Existing details:\n${target.details.trim()}` : '',
     kind === 'character' && target.appearance?.trim()
       ? `Existing appearance:\n${target.appearance.trim()}`
@@ -90,13 +97,19 @@ export function parseGeneratedLoreDetails(
     throw new Error('Ollama returned incomplete structured lore data.')
   }
   if (kind === 'character') {
-    if (!('appearance' in value) || typeof value.appearance !== 'string') {
-      throw new Error('Ollama returned incomplete character appearance data.')
+    if (
+      !('appearance' in value)
+      || typeof value.appearance !== 'string'
+      || !('characterType' in value)
+      || typeof value.characterType !== 'string'
+    ) {
+      throw new Error('Ollama returned incomplete character data.')
     }
     return {
       name: value.name.trim(),
       details: value.details.trim(),
       appearance: value.appearance.trim(),
+      characterType: value.characterType.trim(),
     }
   }
   return { name: value.name.trim(), details: value.details.trim() }

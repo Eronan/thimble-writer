@@ -20,6 +20,7 @@ test('unversioned freeform lore migrates to current schema and keeps kind in gui
     details: 'Mara maps the city.',
     appearance: '',
     generationPrompt: '',
+    characterType: '',
   }])
   assert.deepEqual(migrated.setting, [{
     id: 'legacy-setting',
@@ -44,6 +45,7 @@ test('versionless list-based drafts retain character appearance during migration
     details: 'Cartographer.',
     appearance: 'Silver hair.',
     generationPrompt: '',
+    characterType: '',
   }])
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
 })
@@ -60,6 +62,7 @@ test('version one drafts gain the optional character appearance field', () => {
     details: 'Cartographer.',
     appearance: '',
     generationPrompt: '',
+    characterType: '',
   }])
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
 })
@@ -124,26 +127,6 @@ test('version four drafts migrate per-entry Lore prompts', () => {
     activeChapterId: 'chapter-1',
   })
 
-  test('version five Lore prompts survive migration', () => {
-    const migrated = migrateDraftData({
-      schemaVersion: 4,
-      characters: [{
-        id: 'mara',
-        name: '',
-        details: '',
-        appearance: '',
-        generationPrompt: 'A careful cartographer who distrusts royal maps.',
-      }],
-      setting: [],
-    })
-    assert.deepEqual(migrated.characters, [{
-      id: 'mara',
-      name: '',
-      details: '',
-      appearance: '',
-      generationPrompt: 'A careful cartographer who distrusts royal maps.',
-    }])
-  })
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
   assert.deepEqual(migrated.characters, [{
     id: 'mara',
@@ -151,6 +134,7 @@ test('version four drafts migrate per-entry Lore prompts', () => {
     details: 'A cartographer.',
     appearance: 'Silver hair.',
     generationPrompt: '',
+    characterType: '',
   }])
   assert.deepEqual(migrated.setting, [{
     id: 'city',
@@ -158,6 +142,28 @@ test('version four drafts migrate per-entry Lore prompts', () => {
     details: 'Moves at night.',
     appearance: '',
     generationPrompt: '',
+  }])
+})
+
+test('version five drafts retain Lore prompts and gain character types', () => {
+  const migrated = migrateDraftData({
+    schemaVersion: 5,
+    characters: [{
+      id: 'mara',
+      name: '',
+      details: '',
+      appearance: '',
+      generationPrompt: 'A careful cartographer who distrusts royal maps.',
+    }],
+    setting: [],
+  })
+  assert.deepEqual(migrated.characters, [{
+    id: 'mara',
+    name: '',
+    details: '',
+    appearance: '',
+    generationPrompt: 'A careful cartographer who distrusts royal maps.',
+    characterType: '',
   }])
 })
 

@@ -19,6 +19,7 @@ test('individual lore context includes only the selected entry, story setup, and
     name: 'Mara',
     details: 'She maps old streets.',
     appearance: 'Silver hair.',
+    characterType: 'protagonist',
     generationPrompt: '',
   }
   const result = buildLoreGenerationContext(
@@ -31,6 +32,7 @@ test('individual lore context includes only the selected entry, story setup, and
 
   assert.match(result.context, /Give her a secret/)
   assert.match(result.context, /Mara/)
+  assert.match(result.context, /Character type: protagonist/)
   assert.match(result.context, /She maps old streets/)
   assert.match(result.context, /A cartographer uncovers a moving city/)
   assert.equal(result.clipped, false)
@@ -50,12 +52,13 @@ test('individual lore context rejects empty or over-budget prompts explicitly', 
 
 test('generated character and setting details parse from the expected structured shapes', () => {
   assert.deepEqual(parseGeneratedLoreDetails(
-    '{"name":"Mara","details":"A cartographer.","appearance":"Silver hair."}',
+    '{"name":"Mara","details":"A cartographer.","appearance":"Silver hair.","characterType":"protagonist"}',
     'character',
   ), {
     name: 'Mara',
     details: 'A cartographer.',
     appearance: 'Silver hair.',
+    characterType: 'protagonist',
   })
   assert.deepEqual(parseGeneratedLoreDetails(
     '{"name":"The Moving City","details":"Its streets rearrange each night."}',

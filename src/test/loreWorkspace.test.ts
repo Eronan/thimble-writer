@@ -19,12 +19,12 @@ test('kind is folded into writing guidance and structured lore takes precedence'
     synopsis: 'Current synopsis',
     kind: 'Fantasy',
     guidance: 'Keep a gentle tone.',
-    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.' }],
+    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.', characterType: 'protagonist' }],
     setting: [{ id: 'city', name: 'The city', details: 'Moves at night.', appearance: '' }],
   }), {
     synopsis: 'Current synopsis',
     guidance: 'Keep a gentle tone.\n\nFantasy',
-    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.', generationPrompt: '' }],
+    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.', generationPrompt: '', characterType: 'protagonist' }],
     setting: [{ id: 'city', name: 'The city', details: 'Moves at night.', appearance: '', generationPrompt: '' }],
   })
 })
@@ -36,7 +36,7 @@ test('legacy character and setting notes migrate into editable list entries', ()
   }), {
     synopsis: '',
     guidance: '',
-    characters: [{ id: 'legacy-character', name: '', details: 'Mara is a cartographer.', appearance: '', generationPrompt: '' }],
+    characters: [{ id: 'legacy-character', name: '', details: 'Mara is a cartographer.', appearance: '', generationPrompt: '', characterType: '' }],
     setting: [{ id: 'legacy-setting', name: '', details: 'The city moves each night.', appearance: '', generationPrompt: '' }],
   })
 })
@@ -62,4 +62,11 @@ test('character appearance can be omitted without changing core character notes'
     characters: [{ id: 'mara', name: 'Mara', details: 'Maps the city.' }],
   })
   assert.equal(formatLoreForPrompt(fields), 'Mara\nMaps the city.')
+})
+
+test('character type is included in formatted lore as a role label', () => {
+  const fields = migrateLoreFields({
+    characters: [{ id: 'mara', name: 'Mara', characterType: 'protagonist', details: 'Maps the city.' }],
+  })
+  assert.equal(formatLoreForPrompt(fields), 'Mara (protagonist)\nMaps the city.')
 })
