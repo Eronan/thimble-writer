@@ -264,11 +264,60 @@ button:disabled {
 .chapter-header {
   display: grid;
   grid-column: 1 / -1;
-  gap: 15px;
-  padding: 18px 20px;
+  gap: 16px;
+  padding: 12px 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--paper);
+}
+.chapter-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.chapter-summary-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+.chapter-summary-number {
+  color: var(--muted);
+  font-family: "DM Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+.chapter-summary h2 {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-family: "Newsreader", serif;
+  font-size: 19px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chapter-expand-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+.chapter-expand-button:hover {
+  background: #f1f2eb;
+  color: var(--ink);
+}
+.chapter-details {
+  display: grid;
+  gap: 15px;
 }
 .chapter-controls {
   display: flex;
@@ -1535,6 +1584,17 @@ h1 {
   .chapter-header {
     padding: 15px;
   }
+  .chapter-summary h2 {
+    max-width: 58vw;
+    font-size: 17px;
+  }
+  .chapter-expand-button {
+    gap: 5px;
+    padding: 7px;
+  }
+  .chapter-summary-actions {
+    gap: 5px;
+  }
   .workspace-tabs {
     padding-top: 10px;
   }
@@ -1821,6 +1881,13 @@ h1 {
   .chapter-header {
     border-color: #39443b;
     background: #202722;
+  }
+  .chapter-summary h2 {
+    color: #e2e8e1;
+  }
+  .chapter-expand-button:hover {
+    background: #29332c;
+    color: #e2e8e1;
   }
   .chapter-controls label,
   .chapter-synopsis-field {
