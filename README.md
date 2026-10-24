@@ -1,6 +1,9 @@
 # Thimble Writer
 
-A story-writing front end for small, locally hosted language models, built as a **proof of concept**.
+A story-writing front end for small, locally hosted language models, built as a **proof of concept**. Inspired by perchance.org's [story writer](https://perchance.org/ai-story-generator).
+
+It was created due to a mix of frustration with existing LLM Story Writing harnesses taking control away from the user in various niche situations (enforcing a chat-first interaction), or lacking features (in the case of perchance), or was wasting tokens for efficiency due to trying to send massive unnecessary contexts and brute force it to the large models (various commercial or open-source alternatives).
+
 ![user Interface Screenshot](docs/images/user-interface.png)
 
 > ## ⚠️ Run locally only. Never deploy this.
@@ -40,6 +43,7 @@ Design principles behind the harness:
 - **Structured output** (JSON schemas) wherever the harness needs to read the model's answer.
 - **Verification in code**, such as anchoring comments to real text positions instead of trusting the model's quotes.
 - **The author stays in control.** The model proposes, you decide (see below).
+- **NO Generic chat window** this is to ensure all prompts are single-purpose, and avoid hallucinations as much as possible. While also avoiding wasted tokens. The application is not designed the lazy.
 
 ### You steer, you don't argue
 
@@ -156,3 +160,4 @@ Most of the interesting logic lives in `app/utils/` as plain functions with test
 - Export covers one chapter at a time.
 - Storage is browser local storage only, with no import or backup file.
 - Developed against Ollama only.
+- Due to being vibe-coded at this point in time, the prompts sent to the LLM are unnecessarily verbose and waste tokens.
