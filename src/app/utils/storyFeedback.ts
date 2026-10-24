@@ -31,6 +31,8 @@ type DiffOperation<T> = {
 }
 
 function diffSequence<T>(before: T[], after: T[], equal: (left: T, right: T) => boolean): DiffOperation<T>[] {
+  // Minimal edit sequences retain unchanged phrases around a revision, making it easier to review
+  // whether the model followed feedback without rereading two unrelated full passages.
   const maxDistance = before.length + after.length
   const offset = maxDistance + 1
   let frontier = new Int32Array(maxDistance * 2 + 3)
@@ -92,6 +94,8 @@ function diffSequence<T>(before: T[], after: T[], equal: (left: T, right: T) => 
 }
 
 export function getFeedbackDiffLines(before: string, after: string): FeedbackDiffLinePair[] {
+  // Whitespace-only formatting is not meaningful prose feedback, so normalize it for comparison
+  // and omit empty lines from the review. Saved story/revision text remains untouched.
   const splitLines = (text: string) => text
     .split(/\r?\n/)
     .map(line => line.replace(/\s+/g, ' ').trim())
@@ -104,6 +108,8 @@ export function getFeedbackDiffLines(before: string, after: string): FeedbackDif
   let added: string[] = []
 
   const flushChanges = () => {
+    // Keep changed lines aligned so Before and After are compared together; unmatched lines remain
+    // insertions/deletions, while identical lines are low-noise context shown once.
     const pairCount = Math.max(removed.length, added.length)
     for (let index = 0; index < pairCount; index++) {
       const oldLine = removed[index] ?? null
@@ -139,6 +145,7 @@ export function getFeedbackDiffLines(before: string, after: string): FeedbackDif
 }
 
 export function getFeedbackDiff(before: string, after: string): FeedbackDiffRun[] {
+  // Work on Unicode code points so a surrogate pair is never split into invalid fragments.
   const oldCharacters = Array.from(before)
   const newCharacters = Array.from(after)
   let prefixLength = 0

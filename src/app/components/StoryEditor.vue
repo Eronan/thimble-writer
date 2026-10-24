@@ -32,6 +32,8 @@ const segments = computed(() => {
     ...(range ? [{ ...range, kind: 'summary' as const }] : []),
     ...(feedbackRange ? [{ ...feedbackRange, kind: 'feedback' as const }] : []),
   ].sort((left, right) => left.start - right.start)
+  // Highlight the source passage in place so hovering from memory or feedback shows exactly which
+  // prose it refers to, without replacing the editable textarea or duplicating overlapping text.
   const segments: Array<{ text: string; active: boolean }> = []
   let cursor = 0
   for (const highlight of highlights) {
@@ -46,6 +48,8 @@ const segments = computed(() => {
 
 function syncScroll() {
   if (!input.value || !highlightLayer.value) return
+  // Native textarea selections cannot be styled; a synchronized overlay provides source highlights
+  // while preserving normal text editing and selection behavior.
   highlightLayer.value.scrollTop = input.value.scrollTop
   highlightLayer.value.scrollLeft = input.value.scrollLeft
 }
@@ -59,6 +63,8 @@ function updateSelection() {
     emit('selection', null)
     return
   }
+  // Feedback must apply only to what the user selected. Keep its exact text and offsets so the
+  // queue can reject stale selections instead of guessing a new target.
   emit('selection', { start, end, text: story.value.slice(start, end) })
 }
 

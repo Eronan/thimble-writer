@@ -31,6 +31,8 @@ export function ollamaRequestOptions(
     num_predict: overrides.maxTokens ?? settings.maxTokens,
     num_ctx: settings.numCtx,
   }
+  // Keep normal writing and feedback consistent with the user's settings. Short summary/selection
+  // passes opt out of repeat penalty because their job is to condense/select, not continue prose.
   const repeatPenalty = overrides.repeatPenalty === null
     ? undefined
     : overrides.repeatPenalty ?? settings.repeatPenalty
@@ -74,6 +76,7 @@ function createOllamaClient(baseUrl: string) {
     const decoder = new TextDecoder()
     let buffer = ''
 
+    // Ollama streams newline-delimited JSON; chunks from fetch can split a JSON line anywhere.
     const consumeLine = (line: string) => {
       if (!line.trim()) return
       const item = JSON.parse(line) as Record<string, unknown>

@@ -12,8 +12,8 @@ export type StoryParagraph = {
 
 const sceneBreak = /^\s*(\*{3,}|-{3,}|#{3})\s*$/
 
-// A section is a fixed run of non-empty paragraphs. Blank lines split paragraphs, and *** / ---
-// / ### divider paragraphs force an earlier section boundary. The newest writer window stays raw.
+// Memory follows paragraph/scene boundaries so summaries describe coherent story units. The
+// newest writer window stays raw because the next passage needs exact immediate continuity.
 export function paragraphsWithOffsets(story: string): StoryParagraph[] {
   const paragraphs: StoryParagraph[] = []
   const expression = /\S[\s\S]*?(?=\n\s*\n|$)/g
@@ -33,6 +33,8 @@ export function locateSection(story: string, section: StorySectionSummary) {
   const exact = story.indexOf(section.source)
   if (exact !== -1) return { start: exact, end: exact + section.source.length, stale: false }
 
+  // Keep a summary attached after edits within its section, while requiring both edge anchors so
+  // reused character names or phrases cannot make memory point at an unrelated scene.
   const sourceParagraphs = paragraphsWithOffsets(section.source)
   if (sourceParagraphs.length < 2) return null
   const startAnchor = sourceParagraphs[0]?.text.slice(0, 40) ?? ''
@@ -85,10 +87,14 @@ export function planStorySections(
       addRun()
       continue
     }
+    // Keep scene transitions visible to the model; summarizing a divider into adjacent prose
+    // would blur the boundary between story sections.
     if (sceneBreak.test(paragraph.text)) {
       addRun()
       continue
     }
+    // Cap source length as well as paragraph count so a single long section cannot crowd out the
+    // summarizer's instructions or exceed the configured model context.
     if (run.length && paragraph.end - run[0].start > maxSourceChars) addRun()
     run.push(paragraph)
     if (run.length >= sectionSize) addRun()

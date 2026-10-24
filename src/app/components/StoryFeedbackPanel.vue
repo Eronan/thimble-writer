@@ -130,6 +130,8 @@ defineExpose({ focusInstruction })
           </header>
           <p class="feedback-revision-instruction">{{ revision.instruction }}</p>
           <div class="feedback-diff">
+            <!-- Show unchanged prose once to reduce noise; pair only real edits and highlight their
+                 individual characters so the user can judge exactly what feedback changed. -->
             <div v-for="(line, lineIndex) in getFeedbackDiffLines(revision.before, revision.after)" :key="lineIndex" class="feedback-diff-pair">
               <div v-if="!line.changed" class="feedback-diff-line feedback-diff-context">
                 <code>{{ line.before }}</code>

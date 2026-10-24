@@ -31,6 +31,8 @@ export type FeedbackRevision = {
 }
 
 const storageKey = 'thimble-writer-v1'
+// The continuation should see the actual recent wording for voice and immediate continuity;
+// summaries are a memory aid for older events, not a replacement for the current scene.
 const defaults: Draft = {
   lore: '',
   story: '',
@@ -75,6 +77,7 @@ export function useStoryWriter() {
       if (saved) {
         const parsed = JSON.parse(saved)
         Object.assign(draft, defaults, parsed)
+        // Validate collections separately so older browser drafts can be upgraded safely.
         draft.summaries = Array.isArray(parsed.summaries)
           ? parsed.summaries.filter((section: StorySectionSummary) =>
               typeof section?.id === 'string'
@@ -137,6 +140,8 @@ export function useStoryWriter() {
   }
 
   function buildContext() {
+    // Bound every prompt by the configured context window so generation has room to finish;
+    // otherwise a long draft can crowd out the requested continuation or exceed the model limit.
     const inputTokens = Math.max(0, draft.numCtx - draft.maxTokens - summaryReplyReserve)
     let remainingChars = Math.max(0, Math.floor(inputTokens * charsPerToken))
     const lore = draft.lore.trim()
@@ -146,6 +151,8 @@ export function useStoryWriter() {
     const recentStart = paragraphs.at(-recentParagraphCount)?.start ?? draft.story.length
     const validSummaries = draft.summaries
       .map(section => ({ section, range: locateSection(draft.story, section) }))
+      // A stale/overlapping summary must not hide the recent scene: the model needs its exact
+      // wording to continue naturally, while summaries are intended only for older material.
       .filter(entry => entry.section.summary.trim() && entry.range && entry.range.end <= recentStart)
     const uncompressedParagraphs = paragraphs.filter(paragraph =>
       !validSummaries.some(({ range }) => range && paragraph.start < range.end && paragraph.end > range.start),
@@ -156,6 +163,8 @@ export function useStoryWriter() {
     const storyBudget = Math.min(uncompressedTextLength, Math.floor(remainingChars * 0.6))
     let storyTail = ''
     let usedStoryChars = 0
+    // Favor the immediate lead-in over distant prose. Keep paragraph boundaries intact where
+    // possible so the model sees readable prose rather than a fragment stitched across scenes.
     for (let index = uncompressedParagraphs.length - 1; index >= 0; index--) {
       const entry = uncompressedParagraphs[index]
       if (!entry) continue
@@ -174,12 +183,16 @@ export function useStoryWriter() {
     }
     remainingChars -= usedStoryChars
 
+    // Reserve space for summaries and cap lore before the selection pass. Smaller, relevant lore
+    // gives lower-parameter models useful world facts without asking them to carry the full bible.
     const loreBudget = Math.floor(remainingChars * 0.45)
     const loreContext = lore.slice(0, loreBudget)
     remainingChars -= loreContext.length
 
-    // Keep canonical story text and its summaries in separate labeled blocks. Plain labels are
-    // intentional: they provide structure without introducing a brittle XML parsing convention.
+    // Summaries help the model remember older events, but stay distinct from canonical story text
+    // so a compressed retelling is never mistaken for prose to continue or alter.
+    // Plain labels are deliberate: prompts are consumed as text, so XML would add syntax without
+    // giving the app any structured output to validate or parse.
     const summaryBudget = remainingChars
     const selectedSummaries: string[] = []
     let usedSummaryChars = 0
@@ -213,6 +226,8 @@ export function useStoryWriter() {
     ].filter(Boolean).join('\n\n')
 
     if (draft.mode === 'continue') {
+      // Raw mode is explicitly a single completion prompt; adding chat-style role framing would
+      // change the behavior users selected for direct continuation.
       const rawPrompt = [
         context.lore ? `[Lore]\n${context.lore}` : '',
         context.summaries ? `[Story memory]\n${context.summaries}` : '',
@@ -265,6 +280,8 @@ export function useStoryWriter() {
         flush,
         sourceBudget,
       )
+      // Automatic summaries wait for completed sections to avoid compressing the active scene.
+      // Manual summarizing flushes eligible prose because an explicit user action means "do it now".
       if (!sources.length) {
         if (flush) status.value = 'No older sections need summarizing yet'
         return
@@ -315,7 +332,8 @@ export function useStoryWriter() {
       error.value = 'Write a feedback instruction for the selected text.'
       return false
     }
-    // Keep queued targets disjoint so applying one revision never invalidates another target.
+    // Feedback is scoped to the exact selection. Reject overlaps so one queued rewrite cannot
+    // silently consume or reshape the passage another comment is meant to address.
     const overlaps = draft.feedback.some((comment) => {
       const range = locateFeedback(draft.story, comment)
       return range && start < range.end && end > range.start
@@ -355,7 +373,8 @@ export function useStoryWriter() {
     canUndo.value = false
     let applied = 0
     try {
-      // Re-locate each quote in the latest story so earlier edits cannot shift later targets.
+      // Apply comments in queue order, but re-locate each target against the latest draft because
+      // replacing earlier text shifts offsets. Disjoint selections keep each instruction scoped.
       for (const comment of comments) {
         const range = locateFeedback(draft.story, comment)
         if (!range) {
@@ -393,7 +412,8 @@ export function useStoryWriter() {
         const replacement = response.trim()
         if (!replacement) throw new Error('Ollama returned an empty passage revision.')
 
-        // Replace exactly the selected range; the surrounding context is sent only as guidance.
+        // The model may read surrounding prose for continuity, but only the user's selected range
+        // is replaced so applying feedback cannot unexpectedly rewrite neighboring paragraphs.
         draft.story = `${draft.story.slice(0, range.start)}${replacement}${draft.story.slice(range.end)}`
         draft.feedbackRevisions.push({
           id: `${comment.id}-${Date.now().toString(36)}`,
@@ -409,6 +429,8 @@ export function useStoryWriter() {
       status.value = `Applied ${applied} comment${applied === 1 ? '' : 's'}`
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not apply feedback.'
+      // Earlier successful edits stay applied, while failed and unattempted comments remain
+      // queued so a transient model failure does not lose the user's instructions.
       status.value = applied ? `Applied ${applied}; remaining comments are still queued` : ''
     } finally {
       revisingFeedback.value = false
@@ -435,7 +457,7 @@ export function useStoryWriter() {
     previousStory.value = baseStory
     previousFeedbackRevisions = [...draft.feedbackRevisions]
     canUndo.value = false
-    // A newline, not sentence punctuation, is the explicit signal to start a new paragraph.
+    // The user's rule is structural: a new line starts a paragraph; punctuation alone does not.
     const startsNewParagraph = /(?:\r\n|\n)[\t ]*$/.test(baseStory)
     const alreadyHasParagraphBreak = /(?:\r\n|\n){2,}[\t ]*$/.test(baseStory)
     const context = buildContext()
@@ -445,6 +467,9 @@ export function useStoryWriter() {
 
     try {
       if (context.lore) {
+        // Summaries establish where the story is now, and the prompt establishes what comes next;
+        // together they let this pass select relevant facts without treating old lore as plot.
+        // Only lore facts go into generation so the story remains the source of narrative events.
         status.value = 'Selecting relevant lore…'
         context.lore = (await ollamaClient.chat({
           model: draft.model,
@@ -481,6 +506,8 @@ export function useStoryWriter() {
       if (context.lore) status.value = 'Writing…'
       else if (!draft.lore.trim()) status.value = 'Writing…'
       const request = makeRequest(context)
+      // Show partial prose as it arrives so the user can monitor or stop generation without
+      // waiting for a complete response.
       const appendGeneratedText = (text: string) => {
         generatedText += text
         draft.story = baseStory + separator + generatedText
@@ -521,6 +548,8 @@ export function useStoryWriter() {
 
   function undo() {
     if (!canUndo.value) return
+    // Treat one generation or comment application as one user action; undo restores its starting
+    // draft instead of exposing internal token-by-token changes.
     draft.story = previousStory.value
     draft.feedbackRevisions = previousFeedbackRevisions
     canUndo.value = false
