@@ -92,7 +92,7 @@ export function useStoryWriter() {
     }
   }
 
-  function makeRequest() {
+  function makeRequest(continueCurrentParagraph: boolean) {
     const options = {
       temperature: draft.temperature,
       num_predict: draft.maxTokens,
@@ -102,6 +102,9 @@ export function useStoryWriter() {
     const system = [
       'You are a fiction co-writer. Continue the story in the same voice and tense.',
       'Write only story text, with no notes, titles, or commentary.',
+      continueCurrentParagraph
+        ? 'The story ends mid-sentence or mid-paragraph. Continue directly from its final character, completing the current sentence and paragraph before starting a new paragraph.'
+        : '',
       draft.lore.trim() ? `Lore and story facts:\n${draft.lore.trim()}` : '',
     ].filter(Boolean).join('\n\n')
 
@@ -109,7 +112,8 @@ export function useStoryWriter() {
       const context = [
         draft.lore.trim() ? `[Lore]\n${draft.lore.trim()}` : '',
         draft.prompt.trim() ? `[Next prompt: ${draft.prompt.trim()}]` : '',
-        draft.story.trim() ? `[Story]\n${draft.story.trim()}` : '',
+        continueCurrentParagraph ? '[Continue directly from the unfinished sentence and paragraph.]' : '',
+        draft.story.trim() ? `[Story]\n${draft.story}` : '',
       ].filter(Boolean).join('\n\n')
       return {
         url: `${ollamaUrl}/api/generate`,
@@ -119,9 +123,13 @@ export function useStoryWriter() {
     }
 
     const user = [
-      draft.story.trim() ? `Story so far:\n${draft.story.trim()}` : '',
+      draft.story.trim() ? `Story so far:\n${draft.story}` : '',
       draft.prompt.trim()
-        ? `Write the next part of the story. What happens next: ${draft.prompt.trim()}`
+        ? continueCurrentParagraph
+          ? `Continue directly from the unfinished ending, finish the current sentence and paragraph, then follow this direction: ${draft.prompt.trim()}`
+          : `Write the next part of the story. What happens next: ${draft.prompt.trim()}`
+        : continueCurrentParagraph
+          ? 'Continue directly from the unfinished ending and finish the current sentence and paragraph before starting a new paragraph.'
         : draft.story.trim()
           ? 'Continue the story with the next paragraph.'
           : 'Write the opening paragraph of the story.',
@@ -157,10 +165,13 @@ export function useStoryWriter() {
     const baseStory = draft.story
     previousStory.value = baseStory
     canUndo.value = false
-    const separator = baseStory && !/\s$/.test(baseStory) ? '\n\n' : ''
+    const endsAtLineBreak = /\r?\n$/.test(baseStory)
+    const endsAtSentence = /[.!?]["'”’)\]]*\s*$/.test(baseStory)
+    const continueCurrentParagraph = Boolean(baseStory.trim()) && !endsAtLineBreak && !endsAtSentence
+    const separator = baseStory && !endsAtLineBreak && endsAtSentence ? '\n\n' : ''
 
     try {
-      const request = makeRequest()
+      const request = makeRequest(continueCurrentParagraph)
       const response = await fetch(request.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
