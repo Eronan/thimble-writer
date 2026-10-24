@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { nextTick, onMounted, onUpdated, ref, watch } from 'vue'
 import { locateSection, type StorySectionSummary } from '~/utils/storySections'
 
-defineProps<{
+const props = defineProps<{
   story: string
   busy: boolean
   modelAvailable: boolean
   activeSummaryId: string | null
+  visible: boolean
 }>()
 
 const summaries = defineModel<StorySectionSummary[]>({ required: true })
@@ -14,15 +16,39 @@ const emit = defineEmits<{
   remove: [id: string]
   hover: [id: string | null]
 }>()
+const memoryPanel = ref<HTMLElement | null>(null)
 
 function sourcePreview(source: string) {
   const text = source.replace(/\s+/g, ' ').trim()
   return text.length > 110 ? `${text.slice(0, 110)}…` : text
 }
+
+function resizeSummary(event: Event) {
+  const textarea = event.target
+  if (!(textarea instanceof HTMLTextAreaElement)) return
+  textarea.style.height = 'auto'
+  textarea.style.height = `${textarea.scrollHeight}px`
+}
+
+function resizeSummaries() {
+  memoryPanel.value?.querySelectorAll<HTMLTextAreaElement>('.memory-card textarea').forEach((textarea) => {
+    textarea.style.height = 'auto'
+    textarea.style.height = `${textarea.scrollHeight}px`
+  })
+}
+
+onMounted(resizeSummaries)
+onUpdated(resizeSummaries)
+watch(() => props.visible, async (visible) => {
+  if (visible) {
+    await nextTick()
+    resizeSummaries()
+  }
+})
 </script>
 
 <template>
-  <section class="memory-panel">
+  <section ref="memoryPanel" class="memory-panel">
     <div class="memory-heading">
       <div>
         <p class="eyebrow">LONG-TERM CONTEXT</p>
@@ -67,7 +93,8 @@ function sourcePreview(source: string) {
         <textarea
           v-model="section.summary"
           :aria-label="`Summary of section ${index + 1}`"
-          rows="3"
+          rows="1"
+          @input="resizeSummary"
         />
         <details class="memory-source">
           <summary>Original story excerpt</summary>

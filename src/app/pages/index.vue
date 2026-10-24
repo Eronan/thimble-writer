@@ -41,6 +41,7 @@ const activeWorkspace = ref<'lore' | 'story' | 'chapters'>('lore')
 const workspacePreferenceReady = ref(false)
 const activeSummaryId = ref<string | null>(null)
 const activeFeedbackId = ref<string | null>(null)
+const activeSideTab = ref<'memory' | 'feedback'>('memory')
 const storySelection = ref<{ start: number; end: number; text: string } | null>(null)
 const feedbackPanel = ref<{ focusInstruction: () => void } | null>(null)
 
@@ -173,32 +174,69 @@ function changeChapter(id: string) {
         />
       </section>
       <aside class="right-panels">
-        <StoryMemory
-          v-model="activeChapter.summaries"
-          :story="activeChapter.story"
-          :busy="summarizing || generating || revisingFeedback"
-          :model-available="Boolean(draft.model)"
-          :active-summary-id="activeSummaryId"
-          @summarize="summarizeOlderSections()"
-          @remove="removeSummary"
-          @hover="activeSummaryId = $event"
-        />
-        <StoryFeedbackPanel
-          ref="feedbackPanel"
-          v-model="activeChapter.feedback"
-          :story="activeChapter.story"
-          :revisions="activeChapter.feedbackRevisions"
-          :selection="storySelection"
-          :busy="summarizing || generating || revisingFeedback || proofreading"
-          :model-available="Boolean(draft.model)"
-          :active-feedback-id="activeFeedbackId"
-          :proofreading="proofreading"
-          @add="queueFeedback"
-          @apply="applyFeedback"
-          @proofread="proofreadStory"
-          @remove="removeFeedback"
-          @hover="activeFeedbackId = $event"
-        />
+        <nav class="side-panel-tabs" role="tablist" aria-label="Story tools">
+          <button
+            id="memory-tab"
+            type="button"
+            role="tab"
+            :aria-selected="activeSideTab === 'memory'"
+            aria-controls="memory-panel"
+            :class="{ active: activeSideTab === 'memory' }"
+            @click="activeSideTab = 'memory'"
+          >Memory <span>{{ activeChapter.summaries.length }}</span></button>
+          <button
+            id="feedback-tab"
+            type="button"
+            role="tab"
+            :aria-selected="activeSideTab === 'feedback'"
+            aria-controls="feedback-panel"
+            :class="{ active: activeSideTab === 'feedback' }"
+            @click="activeSideTab = 'feedback'"
+          >Feedback <span>{{ activeChapter.feedback.length }}</span></button>
+        </nav>
+        <div
+          id="memory-panel"
+          class="side-panel-content"
+          role="tabpanel"
+          aria-labelledby="memory-tab"
+          v-show="activeSideTab === 'memory'"
+        >
+          <StoryMemory
+            v-model="activeChapter.summaries"
+            :story="activeChapter.story"
+            :busy="summarizing || generating || revisingFeedback"
+            :model-available="Boolean(draft.model)"
+            :active-summary-id="activeSummaryId"
+            :visible="activeSideTab === 'memory'"
+            @summarize="summarizeOlderSections()"
+            @remove="removeSummary"
+            @hover="activeSummaryId = $event"
+          />
+        </div>
+        <div
+          id="feedback-panel"
+          class="side-panel-content"
+          role="tabpanel"
+          aria-labelledby="feedback-tab"
+          v-show="activeSideTab === 'feedback'"
+        >
+          <StoryFeedbackPanel
+            ref="feedbackPanel"
+            v-model="activeChapter.feedback"
+            :story="activeChapter.story"
+            :revisions="activeChapter.feedbackRevisions"
+            :selection="storySelection"
+            :busy="summarizing || generating || revisingFeedback || proofreading"
+            :model-available="Boolean(draft.model)"
+            :active-feedback-id="activeFeedbackId"
+            :proofreading="proofreading"
+            @add="queueFeedback"
+            @apply="applyFeedback"
+            @proofread="proofreadStory"
+            @remove="removeFeedback"
+            @hover="activeFeedbackId = $event"
+          />
+        </div>
       </aside>
     </div>
 
