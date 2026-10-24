@@ -1,6 +1,7 @@
 # Thimble Writer
 
 A story-writing front end for small, locally hosted language models, built as a **proof of concept**.
+![user Interface Screenshot](docs/images/user-interface.png)
 
 > ## ⚠️ Run locally only. Never deploy this.
 >
