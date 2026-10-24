@@ -44,6 +44,7 @@ type ChatRequest = {
   model: string
   messages: OllamaChatMessage[]
   options: OllamaRequestOptions
+  format?: 'json' | Record<string, unknown>
   signal?: AbortSignal
 }
 
@@ -107,8 +108,8 @@ function createOllamaClient(baseUrl: string) {
       return (data.models ?? []).map(model => ({ name: model.name, size: model.size }))
     },
 
-    async chat({ model, messages, options, signal }: ChatRequest): Promise<string> {
-      const response = await post('/api/chat', { model, messages, options, stream: false }, signal)
+    async chat({ model, messages, options, format, signal }: ChatRequest): Promise<string> {
+      const response = await post('/api/chat', { model, messages, options, format, stream: false }, signal)
       const data = await response.json() as { message?: { content?: string } }
       return data.message?.content ?? ''
     },

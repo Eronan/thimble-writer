@@ -10,12 +10,14 @@ const props = defineProps<{
   busy: boolean
   modelAvailable: boolean
   activeFeedbackId: string | null
+  proofreading: boolean
 }>()
 
 const feedback = defineModel<StoryFeedback[]>({ required: true })
 const emit = defineEmits<{
   add: [selection: { start: number; end: number; text: string }, instruction: string]
   apply: [id?: string]
+  proofread: []
   remove: [id: string]
   hover: [id: string | null]
 }>()
@@ -60,7 +62,16 @@ defineExpose({ focusInstruction })
       </div>
       <span class="count-pill">{{ feedback.length }} queued</span>
     </header>
-    <p class="feedback-help">Select text in the story, then add an instruction here. Apply queued comments separately; each edit replaces only its selected passage.</p>
+    <p class="feedback-help">Proofreading adds reviewable comments without changing your story. You can also select text and add your own passage-specific instructions.</p>
+
+    <button
+      class="proofread-button"
+      type="button"
+      :disabled="busy || !modelAvailable || !story.trim()"
+      @click="emit('proofread')"
+    >
+      {{ proofreading ? 'Proofreading…' : 'Proofread story' }}
+    </button>
 
     <button
       class="apply-feedback-button"

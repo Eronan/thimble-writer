@@ -59,8 +59,9 @@ button { color: inherit; }
 .memory-panel { overflow: hidden; padding: 22px 15px; border: 1px solid #e9e9e1; border-radius: 11px; background: #f1f2eb; }
 .memory-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .memory-heading h1 { font-size: 25px; }
-.summarize-button { width: 100%; margin: 0 0 12px; padding: 9px; border: 1px solid #d6dfd3; border-radius: 6px; background: #f8f9f4; color: var(--green-dark); cursor: pointer; font-size: 11px; font-weight: 600; }
+.summarize-button, .proofread-button { width: 100%; margin: 0 0 12px; padding: 9px; border: 1px solid #d6dfd3; border-radius: 6px; background: #f8f9f4; color: var(--green-dark); cursor: pointer; font-size: 11px; font-weight: 600; }
 .summarize-button:disabled { cursor: default; opacity: .5; }
+.proofread-button:disabled { cursor: default; opacity: .5; }
 .memory-list { display: flex; min-height: 0; flex-direction: column; gap: 9px; overflow: auto; }
 .memory-card { padding: 10px; border: 1px solid #e1e4db; border-radius: 7px; background: #f8f9f4; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
 .memory-card-active { border-color: #8ca77d; background: #fbfcf5; box-shadow: 0 0 0 2px #78916c2b; }

@@ -6,6 +6,7 @@ const {
   generating,
   summarizing,
   revisingFeedback,
+  proofreading,
   error,
   status,
   canUndo,
@@ -15,6 +16,7 @@ const {
   removeSummary,
   addFeedback,
   applyFeedback,
+  proofreadStory,
   removeFeedback,
   writeNext,
   undo,
@@ -87,11 +89,13 @@ function focusFeedbackComposer() {
           :story="draft.story"
           :revisions="draft.feedbackRevisions"
           :selection="storySelection"
-          :busy="summarizing || generating || revisingFeedback"
+          :busy="summarizing || generating || revisingFeedback || proofreading"
           :model-available="Boolean(draft.model)"
           :active-feedback-id="activeFeedbackId"
+          :proofreading="proofreading"
           @add="queueFeedback"
           @apply="applyFeedback"
+          @proofread="proofreadStory"
           @remove="removeFeedback"
           @hover="activeFeedbackId = $event"
         />
