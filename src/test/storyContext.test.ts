@@ -20,7 +20,8 @@ test('context keeps recent prose verbatim and includes summaries for older secti
 
   assert.equal(context.story, 'Recent scene begins.\n\nLatest line.')
   assert.equal(context.summaries, '- Mara learned the map remembers its makers.')
-  assert.equal(context.lore, 'Mara maps old places.')
+  assert.equal(context.lore, '')
+  assert.ok(context.loreBudget > 0)
   assert.equal(context.continueCurrentParagraph, true)
 })
 

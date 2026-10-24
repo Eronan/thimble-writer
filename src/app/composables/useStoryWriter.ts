@@ -1,8 +1,17 @@
-import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { locateSection, paragraphsWithOffsets, planStorySections, type StorySectionSummary } from '~/utils/storySections'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 import { ollamaClient, ollamaRequestOptions, type OllamaModel } from '~/clients/ollamaClient'
+import { draftStorage } from '~/clients/draftStorage'
 import { buildStoryContext, charsPerToken, makeStoryRequest, summaryReplyTokens, summarySystem } from '~/utils/storyPrompt'
+import { buildFeedbackRevisionContext } from '~/utils/feedbackRevisionPrompt'
+import {
+  fitLoreEntries,
+  loreSelectionResponseFormat,
+  loreSelectionSystem,
+  parseLoreSelectionResponse,
+  prepareLoreEntries,
+} from '~/utils/storyLore'
 import {
   anchorProofreadSuggestions,
   parseProofreadResponse,
@@ -38,7 +47,7 @@ export type FeedbackRevision = {
   appliedAt: number
 }
 
-const storageKey = 'thimble-writer-v1'
+const draftSaveDelay = 500
 // The continuation should see the actual recent wording for voice and immediate continuity;
 // summaries are a memory aid for older events, not a replacement for the current scene.
 const defaults: Draft = {
@@ -70,14 +79,38 @@ export function useStoryWriter() {
   const proofreading = ref(false)
   const canUndo = ref(false)
   const previousStory = ref('')
+  let previousFeedback: StoryFeedback[] = []
   let previousFeedbackRevisions: FeedbackRevision[] = []
   const abortController = shallowRef<AbortController | null>(null)
   const selectedModelSize = computed(() => models.value.find(model => model.name === draft.model)?.size)
   let readyToSave = false
+  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  function persistDraft() {
+    if (!readyToSave) return
+    if (draftSaveTimer !== null) {
+      clearTimeout(draftSaveTimer)
+      draftSaveTimer = null
+    }
+    try {
+      void draftStorage.save(JSON.stringify(draft)).catch(() => {
+        error.value = 'Could not save this draft in browser storage.'
+      })
+    } catch {
+      error.value = 'Could not save this draft in browser storage.'
+    }
+  }
+
+  function scheduleDraftSave() {
+    if (!readyToSave || generating.value) return
+    if (draftSaveTimer !== null) clearTimeout(draftSaveTimer)
+    draftSaveTimer = setTimeout(persistDraft, draftSaveDelay)
+  }
 
   onMounted(async () => {
+    window.addEventListener('pagehide', persistDraft)
     try {
-      const saved = localStorage.getItem(storageKey)
+      const saved = await draftStorage.load()
       if (saved) {
         const parsed = JSON.parse(saved)
         Object.assign(draft, defaults, parsed)
@@ -116,14 +149,14 @@ export function useStoryWriter() {
     await refreshModels()
   })
 
-  watch(draft, (value) => {
-    if (!readyToSave) return
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(value))
-    } catch {
-      error.value = 'Could not save this draft in browser storage.'
-    }
-  }, { deep: true })
+  onBeforeUnmount(() => {
+    window.removeEventListener('pagehide', persistDraft)
+    persistDraft()
+  })
+
+  // Streaming can update story.value for every token. Debounce those edits and persist once
+  // generation settles instead of serializing the full draft on every incremental update.
+  watch(draft, scheduleDraftSave, { deep: true })
 
   async function refreshModels() {
     loadingModels.value = true
@@ -250,6 +283,7 @@ export function useStoryWriter() {
     error.value = ''
     status.value = commentId ? 'Applying comment…' : 'Applying feedback…'
     previousStory.value = draft.story
+    previousFeedback = draft.feedback.map(comment => ({ ...comment }))
     previousFeedbackRevisions = [...draft.feedbackRevisions]
     canUndo.value = false
     let applied = 0
@@ -267,7 +301,6 @@ export function useStoryWriter() {
         const lastParagraph = paragraphs.findIndex(paragraph => paragraph.start < range.end && paragraph.end >= range.end)
         const contextStart = paragraphs[Math.max(0, firstParagraph - 1)]?.start ?? range.start
         const contextEnd = paragraphs[Math.min(paragraphs.length - 1, Math.max(lastParagraph, 0) + 1)]?.end ?? range.end
-        const surroundingText = draft.story.slice(contextStart, contextEnd)
         const sectionSummaries = draft.summaries
           .map(section => ({ section, range: locateSection(draft.story, section) }))
           .filter(item => item.range && item.range.start <= range.end && item.range.end >= range.start)
@@ -278,13 +311,16 @@ export function useStoryWriter() {
           'Apply the feedback only to the selected passage. Return only the replacement passage, with no explanation, labels, or quotation marks.',
           'Preserve the surrounding context, point of view, tense, and voice. Do not rewrite or repeat text outside the selected passage.',
         ].join('\n')
-        const user = [
-          draft.lore.trim() ? `Lore:\n${draft.lore.trim()}` : '',
-          sectionSummaries.length ? `Relevant section summaries:\n${sectionSummaries.join('\n')}` : '',
-          `Surrounding story context (do not replace this entire context):\n${surroundingText}`,
-          `Selected passage to replace:\n${comment.source}`,
-          `Feedback for this passage:\n${comment.instruction}`,
-        ].filter(Boolean).join('\n\n')
+        const user = buildFeedbackRevisionContext({
+          system,
+          lore: draft.lore,
+          summaries: sectionSummaries,
+          surroundingBefore: draft.story.slice(contextStart, range.start),
+          surroundingAfter: draft.story.slice(range.end, contextEnd),
+          selectedPassage: comment.source,
+          instruction: comment.instruction,
+          maxChars: Math.floor((draft.numCtx - draft.maxTokens - 250) * charsPerToken),
+        })
         const response = await ollamaClient.chat({
           model: draft.model,
           options: ollamaRequestOptions(draft, { temperature: Math.min(draft.temperature, 0.5) }),
@@ -316,6 +352,8 @@ export function useStoryWriter() {
     } finally {
       revisingFeedback.value = false
       canUndo.value = draft.story !== previousStory.value
+        || draft.feedback.length !== previousFeedback.length
+        || draft.feedbackRevisions.length !== previousFeedbackRevisions.length
     }
   }
 
@@ -450,6 +488,7 @@ export function useStoryWriter() {
     abortController.value = controller
     const baseStory = draft.story
     previousStory.value = baseStory
+    previousFeedback = draft.feedback.map(comment => ({ ...comment }))
     previousFeedbackRevisions = [...draft.feedbackRevisions]
     canUndo.value = false
     // The user's rule is structural: a new line starts a paragraph; punctuation alone does not.
@@ -469,40 +508,41 @@ export function useStoryWriter() {
     let generatedText = ''
 
     try {
-      if (context.lore) {
+      let omittedLoreEntries = 0
+      if (draft.lore.trim()) {
         // Summaries establish where the story is now, and the prompt establishes what comes next;
         // together they let this pass select relevant facts without treating old lore as plot.
-        // Only lore facts go into generation so the story remains the source of narrative events.
+        // Send every numbered entry, clipping entries evenly only when the selector window needs it.
         status.value = 'Selecting relevant lore…'
-        context.lore = (await ollamaClient.chat({
+        const selectorMaxTokens = Math.min(256, Math.max(1, draft.numCtx - 300))
+        const selectorInputBudget = Math.floor((draft.numCtx - selectorMaxTokens - 200) * charsPerToken)
+        const selectorContext = [
+          context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
+          draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
+        ].filter(Boolean).join('\n\n')
+        const loreInputBudget = selectorInputBudget - loreSelectionSystem.length - selectorContext.length - 180
+        const preparedLore = prepareLoreEntries(draft.lore, loreInputBudget)
+        const selectionResponse = await ollamaClient.chat({
           model: draft.model,
           options: ollamaRequestOptions(draft, {
             temperature: Math.min(draft.temperature, 0.3),
-            maxTokens: Math.min(draft.maxTokens, 400),
+            maxTokens: selectorMaxTokens,
             repeatPenalty: null,
           }),
+          format: loreSelectionResponseFormat,
           signal: controller.signal,
           messages: [
-            {
-              role: 'system',
-              content: [
-                'You prepare concise, relevant lore for a fiction co-writer.',
-                'Use the lore as the source of truth. Use the recent section summaries only to determine which lore is relevant to the current point in the story.',
-                'Return only the relevant established facts, names, relationships, constraints, and unresolved details. Do not repeat story events from the summaries, invent facts, or add prose.',
-                'If no lore is relevant, reply with an empty response.',
-              ].join(' '),
-            },
+            { role: 'system', content: loreSelectionSystem },
             {
               role: 'user',
-              content: [
-                `Lore:\n${context.lore}`,
-                context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
-                draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
-                'Relevant lore:',
-              ].filter(Boolean).join('\n\n'),
+              content: `${selectorContext ? `${selectorContext}\n\n` : ''}Numbered lore entries:\n${preparedLore.text}`,
             },
           ],
-        })).trim()
+        })
+        const selectedNumbers = parseLoreSelectionResponse(selectionResponse, preparedLore.entries)
+        const fittedLore = fitLoreEntries(preparedLore.entries, selectedNumbers, context.loreBudget)
+        context.lore = fittedLore.text
+        omittedLoreEntries = fittedLore.omitted
         if (!context.lore) status.value = 'Writing without relevant lore…'
       }
 
@@ -540,7 +580,11 @@ export function useStoryWriter() {
       }
 
       canUndo.value = draft.story !== baseStory
-      if (generatedText.trim()) status.value = 'Writing complete'
+      if (generatedText.trim()) {
+        status.value = omittedLoreEntries
+          ? `Writing complete (${omittedLoreEntries} selected lore entr${omittedLoreEntries === 1 ? 'y did' : 'ies did'} not fit the generation budget)`
+          : 'Writing complete'
+      }
       if (!generatedText.trim()) status.value = 'The model returned no text.'
     } catch (cause) {
       if (cause instanceof Error && cause.name !== 'AbortError') {
@@ -553,6 +597,7 @@ export function useStoryWriter() {
     } finally {
       generating.value = false
       abortController.value = null
+      scheduleDraftSave()
     }
     if (generatedText.trim()) await summarizeOlderSections(draft.story, false)
   }
@@ -562,6 +607,7 @@ export function useStoryWriter() {
     // Treat one generation or comment application as one user action; undo restores its starting
     // draft instead of exposing internal token-by-token changes.
     draft.story = previousStory.value
+    draft.feedback = previousFeedback.map(comment => ({ ...comment }))
     draft.feedbackRevisions = previousFeedbackRevisions
     canUndo.value = false
     status.value = 'Last addition undone'

@@ -92,8 +92,9 @@ defineExpose({ focusInstruction })
         aria-label="Feedback for selected story passage"
         placeholder="What should change in this passage?"
         rows="3"
+        :disabled="busy"
       />
-      <button class="add-feedback-button" type="button" :disabled="!validSelection || !instructionText.trim()" @click="addComment">
+      <button class="add-feedback-button" type="button" :disabled="busy || !validSelection || !instructionText.trim()" @click="addComment">
         Add comment
       </button>
     </div>
@@ -117,11 +118,12 @@ defineExpose({ focusInstruction })
               class="memory-remove"
               type="button"
               :aria-label="`Remove feedback ${index + 1}`"
+              :disabled="busy"
               @click="emit('remove', comment.id)"
             >×</button>
           </header>
           <p class="feedback-excerpt">{{ excerpt(comment.source) }}</p>
-          <textarea v-model="comment.instruction" :aria-label="`Instruction for comment ${index + 1}`" rows="2" />
+          <textarea v-model="comment.instruction" :aria-label="`Instruction for comment ${index + 1}`" rows="2" :disabled="busy" />
           <button
             class="apply-single-feedback-button"
             type="button"

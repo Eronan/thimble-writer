@@ -20,6 +20,7 @@ export type StoryContextInput = {
 
 export type StoryContext = {
   lore: string
+  loreBudget: number
   summaries: string
   story: string
   continueCurrentParagraph: boolean
@@ -40,7 +41,6 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
   // out the model's ability to finish a useful response.
   const inputTokens = Math.max(0, input.numCtx - input.maxTokens - summaryReplyReserve)
   let remainingChars = Math.max(0, Math.floor(inputTokens * charsPerToken))
-  const lore = input.lore.trim()
   const prompt = input.prompt.trim()
   const paragraphs = paragraphsWithOffsets(input.story)
   const recentParagraphCount = Math.max(1, Math.floor(input.writerParagraphs) || 3)
@@ -80,9 +80,9 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
 
   // Smaller models cannot reliably use a full lore document; reserve a bounded slice for relevant
   // world facts rather than letting lore displace the current story and its accumulated memory.
+  // The actual lore is selected by the separate entry-selection pass before generation.
   const loreBudget = Math.floor(remainingChars * 0.45)
-  const loreContext = lore.slice(0, loreBudget)
-  remainingChars -= loreContext.length
+  remainingChars -= loreBudget
 
   const selectedSummaries: string[] = []
   let usedSummaryChars = 0
@@ -95,7 +95,8 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
   }
 
   return {
-    lore: loreContext,
+    lore: '',
+    loreBudget,
     summaries: selectedSummaries.join('\n'),
     story: storyTail,
     continueCurrentParagraph: Boolean(input.story.trim()) && !/(?:\r\n|\n)[\t ]*$/.test(input.story),
