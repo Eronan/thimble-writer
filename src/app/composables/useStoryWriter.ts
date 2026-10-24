@@ -480,6 +480,50 @@ export function useStoryWriter() {
     let generatedText = ''
 
     try {
+      if (context.lore) {
+        status.value = 'Selecting relevant lore…'
+        const response = await fetch(`${ollamaUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: draft.model,
+            stream: false,
+            options: {
+              temperature: Math.min(draft.temperature, 0.3),
+              num_predict: Math.min(draft.maxTokens, 400),
+              num_ctx: draft.numCtx,
+            },
+            messages: [
+              {
+                role: 'system',
+                content: [
+                  'You prepare concise, relevant lore for a fiction co-writer.',
+                  'Use the lore as the source of truth. Use the recent section summaries only to determine which lore is relevant to the current point in the story.',
+                  'Return only the relevant established facts, names, relationships, constraints, and unresolved details. Do not repeat story events from the summaries, invent facts, or add prose.',
+                  'If no lore is relevant, reply with an empty response.',
+                ].join(' '),
+              },
+              {
+                role: 'user',
+                content: [
+                  `Lore:\n${context.lore}`,
+                  context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
+                  draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
+                  'Relevant lore:',
+                ].filter(Boolean).join('\n\n'),
+              },
+            ],
+          }),
+        })
+        if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
+        const data = await response.json()
+        context.lore = (data.message?.content ?? '').trim()
+        if (!context.lore) status.value = 'Writing without relevant lore…'
+      }
+
+      if (context.lore) status.value = 'Writing…'
+      else if (!draft.lore.trim()) status.value = 'Writing…'
       const request = makeRequest(context)
       const response = await fetch(request.url, {
         method: 'POST',
