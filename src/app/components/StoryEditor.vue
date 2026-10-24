@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { locateSection, type StorySectionSummary } from '~/utils/storySections'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
+import { createStoryMarkdown, createStoryOdt, downloadStory } from '~/utils/storyExport'
 
 const props = defineProps<{
   canUndo: boolean
@@ -21,6 +22,14 @@ const emit = defineEmits<{
 const input = ref<HTMLTextAreaElement | null>(null)
 const highlightLayer = ref<HTMLDivElement | null>(null)
 const selectedLength = ref(0)
+
+function exportMarkdown() {
+  downloadStory(createStoryMarkdown(story.value), 'story.md')
+}
+
+function exportOdt() {
+  downloadStory(createStoryOdt(story.value), 'story.odt')
+}
 
 const segments = computed(() => {
   const text = story.value
@@ -106,6 +115,8 @@ watch(() => props.activeFeedbackId, async (id) => {
         :title="selectedLength ? `Add a comment for ${selectedLength} selected characters` : 'Select story text, then add a comment'"
         @click="emit('comment')"
       >Add comment</button>
+      <button class="undo-button" type="button" :disabled="!story.trim()" @click="exportMarkdown">Markdown</button>
+      <button class="undo-button" type="button" :disabled="!story.trim()" @click="exportOdt">ODT</button>
       <button class="undo-button" type="button" :disabled="!canUndo || generating" @click="emit('undo')">Undo</button>
     </div>
   </div>

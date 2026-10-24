@@ -132,6 +132,7 @@ h1 { margin: 5px 0 0; color: var(--ink); font-family: 'Newsreader', serif; font-
 .story-actions { display: flex; align-items: center; gap: 12px; }
 .word-count { color: #9a9e94; font-family: 'DM Mono', monospace; font-size: 10px; }
 .undo-button { padding: 6px 10px; color: #757d71; font-size: 11px; }
+.story-actions .undo-button:hover:not(:disabled) { border-color: #c5d5c0; color: var(--green-dark); }
 .comment-selection-button { border-color: #c5d5c0; background: #eaf0e6; color: var(--green-dark); font-weight: 600; }
 .comment-selection-button:hover:not(:disabled) { border-color: #9eb596; background: #e0eadb; }
 .comment-selection-button:disabled { opacity: .8; }
