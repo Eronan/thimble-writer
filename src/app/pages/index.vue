@@ -29,9 +29,11 @@ const {
   fixingSynopsis,
   generatingSynopsisId,
   generatingAllStructure,
+  generatingLoreId,
   fixChapterSynopsis,
   generateChapterSynopsis,
   generateAllChapterStructure,
+  generateLoreEntry,
 } = useStoryWriter()
 
 const settingsOpen = ref(false)
@@ -110,6 +112,12 @@ function changeChapter(id: string) {
       v-model:guidance="draft.guidance"
       v-model:characters="draft.characters"
       v-model:setting="draft.setting"
+      :busy="isBusy"
+      :model-available="Boolean(draft.model)"
+      :generating-lore-id="generatingLoreId"
+      :error="error"
+      :status="status"
+      @generate="generateLoreEntry"
     />
 
     <ChapterGenerator

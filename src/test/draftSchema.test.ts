@@ -19,12 +19,14 @@ test('unversioned freeform lore migrates to current schema and keeps kind in gui
     name: '',
     details: 'Mara maps the city.',
     appearance: '',
+    generationPrompt: '',
   }])
   assert.deepEqual(migrated.setting, [{
     id: 'legacy-setting',
     name: '',
     details: 'The city moves at night.',
     appearance: '',
+    generationPrompt: '',
   }])
   assert.equal(migrated.prompt, 'Find the hidden door.')
   assert.equal('lore' in migrated, false)
@@ -41,6 +43,7 @@ test('versionless list-based drafts retain character appearance during migration
     name: 'Mara',
     details: 'Cartographer.',
     appearance: 'Silver hair.',
+    generationPrompt: '',
   }])
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
 })
@@ -56,6 +59,7 @@ test('version one drafts gain the optional character appearance field', () => {
     name: 'Mara',
     details: 'Cartographer.',
     appearance: '',
+    generationPrompt: '',
   }])
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
 })
@@ -100,6 +104,61 @@ test('version three drafts gain the persisted structure generator prompt', () =>
   })
   assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
   assert.equal(migrated.structurePrompt, '')
+})
+
+test('version four drafts migrate per-entry Lore prompts', () => {
+  const migrated = migrateDraftData({
+    schemaVersion: 4,
+    synopsis: 'A story premise.',
+    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.' }],
+    setting: [{ id: 'city', name: 'The city', details: 'Moves at night.' }],
+    chapters: [{
+      id: 'chapter-1',
+      title: 'Chapter 1',
+      synopsis: '',
+      story: '',
+      summaries: [],
+      feedback: [],
+      feedbackRevisions: [],
+    }],
+    activeChapterId: 'chapter-1',
+  })
+
+  test('version five Lore prompts survive migration', () => {
+    const migrated = migrateDraftData({
+      schemaVersion: 4,
+      characters: [{
+        id: 'mara',
+        name: '',
+        details: '',
+        appearance: '',
+        generationPrompt: 'A careful cartographer who distrusts royal maps.',
+      }],
+      setting: [],
+    })
+    assert.deepEqual(migrated.characters, [{
+      id: 'mara',
+      name: '',
+      details: '',
+      appearance: '',
+      generationPrompt: 'A careful cartographer who distrusts royal maps.',
+    }])
+  })
+  assert.equal(migrated.schemaVersion, DRAFT_SCHEMA_VERSION)
+  assert.deepEqual(migrated.characters, [{
+    id: 'mara',
+    name: 'Mara',
+    details: 'A cartographer.',
+    appearance: 'Silver hair.',
+    generationPrompt: '',
+  }])
+  assert.deepEqual(migrated.setting, [{
+    id: 'city',
+    name: 'The city',
+    details: 'Moves at night.',
+    appearance: '',
+    generationPrompt: '',
+  }])
 })
 
 test('current drafts stay stable and unsupported future schema versions fail explicitly', () => {

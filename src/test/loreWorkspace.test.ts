@@ -24,8 +24,8 @@ test('kind is folded into writing guidance and structured lore takes precedence'
   }), {
     synopsis: 'Current synopsis',
     guidance: 'Keep a gentle tone.\n\nFantasy',
-    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.' }],
-    setting: [{ id: 'city', name: 'The city', details: 'Moves at night.', appearance: '' }],
+    characters: [{ id: 'mara', name: 'Mara', details: 'A cartographer.', appearance: 'Silver hair.', generationPrompt: '' }],
+    setting: [{ id: 'city', name: 'The city', details: 'Moves at night.', appearance: '', generationPrompt: '' }],
   })
 })
 
@@ -36,8 +36,8 @@ test('legacy character and setting notes migrate into editable list entries', ()
   }), {
     synopsis: '',
     guidance: '',
-    characters: [{ id: 'legacy-character', name: '', details: 'Mara is a cartographer.', appearance: '' }],
-    setting: [{ id: 'legacy-setting', name: '', details: 'The city moves each night.', appearance: '' }],
+    characters: [{ id: 'legacy-character', name: '', details: 'Mara is a cartographer.', appearance: '', generationPrompt: '' }],
+    setting: [{ id: 'legacy-setting', name: '', details: 'The city moves each night.', appearance: '', generationPrompt: '' }],
   })
 })
 

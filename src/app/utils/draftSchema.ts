@@ -2,7 +2,7 @@ import { migrateLoreFields } from './loreWorkspace.ts'
 import type { LoreNote } from './loreWorkspace.ts'
 import type { StoryChapter } from '~/types/storyWriter'
 
-export const DRAFT_SCHEMA_VERSION = 4
+export const DRAFT_SCHEMA_VERSION = 5
 
 type DraftData = Record<string, unknown> & {
   schemaVersion?: unknown
@@ -28,12 +28,14 @@ function migrateEntries(value: unknown): LoreNote[] {
     const name = typeof entry.name === 'string' ? entry.name : ''
     const details = typeof entry.details === 'string' ? entry.details : ''
     const appearance = typeof entry.appearance === 'string' ? entry.appearance : ''
-    if (!name.trim() && !details.trim() && !appearance.trim()) return []
+    const generationPrompt = typeof entry.generationPrompt === 'string' ? entry.generationPrompt : ''
+    if (!name.trim() && !details.trim() && !appearance.trim() && !generationPrompt.trim()) return []
     return [{
       id: typeof entry.id === 'string' && entry.id ? entry.id : `lore-entry-${index}`,
       name,
       details,
       appearance,
+      generationPrompt,
     }]
   })
 }
@@ -126,11 +128,21 @@ function versionThreeToFour(data: DraftData): DraftData {
   }
 }
 
+function versionFourToFive(data: DraftData): DraftData {
+  return {
+    ...data,
+    characters: migrateEntries(data.characters),
+    setting: migrateEntries(data.setting),
+    schemaVersion: 5,
+  }
+}
+
 const migrations: Record<number, (data: DraftData) => DraftData> = {
   0: versionZeroToOne,
   1: versionOneToTwo,
   2: versionTwoToThree,
   3: versionThreeToFour,
+  4: versionFourToFive,
 }
 
 function inferVersion(data: DraftData): number {

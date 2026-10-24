@@ -3,6 +3,7 @@ export type LoreNote = {
   name: string
   details: string
   appearance?: string
+  generationPrompt?: string
 }
 
 export type LoreFields = {
@@ -30,7 +31,8 @@ function migrateEntries(value: unknown, legacyId: string): LoreNote[] {
       const name = typeof candidate.name === 'string' ? candidate.name : ''
       const details = typeof candidate.details === 'string' ? candidate.details : ''
       const appearance = typeof candidate.appearance === 'string' ? candidate.appearance : ''
-      if (!name.trim() && !details.trim() && !appearance.trim()) return []
+      const generationPrompt = typeof candidate.generationPrompt === 'string' ? candidate.generationPrompt : ''
+      if (!name.trim() && !details.trim() && !appearance.trim() && !generationPrompt.trim()) return []
       return [{
         id: typeof candidate.id === 'string' && candidate.id
           ? candidate.id
@@ -38,11 +40,12 @@ function migrateEntries(value: unknown, legacyId: string): LoreNote[] {
         name,
         details,
         appearance,
+        generationPrompt,
       }]
     })
   }
   return typeof value === 'string' && value.trim()
-    ? [{ id: legacyId, name: '', details: value, appearance: '' }]
+    ? [{ id: legacyId, name: '', details: value, appearance: '', generationPrompt: '' }]
     : []
 }
 

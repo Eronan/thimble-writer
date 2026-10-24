@@ -23,6 +23,7 @@ import { formatLoreForPrompt } from '~/utils/loreWorkspace'
 import { useStoryProofreading } from './useStoryProofreading'
 import { useStorySummaries } from './useStorySummaries'
 import { useChapterSynopsis } from './useChapterSynopsis'
+import { useLoreGeneration } from './useLoreGeneration'
 
 const draftSaveDelay = 500
 // The continuation should see the actual recent wording for voice and immediate continuity;
@@ -221,6 +222,19 @@ export function useStoryWriter() {
   } = useChapterSynopsis({
     draft,
     chapter: activeChapter,
+    generating,
+    summarizing,
+    revisingFeedback,
+    proofreading,
+    error,
+    status,
+  })
+  const {
+    busy: loreGenerationBusy,
+    generatingLoreId,
+    generateLoreEntry,
+  } = useLoreGeneration({
+    draft,
     generating,
     summarizing,
     revisingFeedback,
@@ -546,7 +560,8 @@ export function useStoryWriter() {
   }
 
   const isBusy = computed(() =>
-    generating.value || summarizing.value || revisingFeedback.value || proofreading.value || chapterSynopsisBusy.value,
+    generating.value || summarizing.value || revisingFeedback.value || proofreading.value
+      || chapterSynopsisBusy.value || loreGenerationBusy.value,
   )
 
   return {
@@ -565,6 +580,7 @@ export function useStoryWriter() {
     fixingSynopsis,
     generatingSynopsisId,
     generatingAllStructure,
+    generatingLoreId,
     addFeedback,
     applyFeedback,
     proofreadStory,
@@ -582,6 +598,7 @@ export function useStoryWriter() {
     fixChapterSynopsis,
     generateChapterSynopsis,
     generateAllChapterStructure,
+    generateLoreEntry,
     refreshModels,
     summarizeOlderSections,
     writeNext,
