@@ -1,6 +1,7 @@
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { locateSection, paragraphsWithOffsets, planStorySections, type StorySectionSummary } from '~/utils/storySections'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
+import { ollamaClient, ollamaRequestOptions, type OllamaModel } from '~/clients/ollamaClient'
 
 export type PromptMode = 'instruct' | 'continue'
 
@@ -29,12 +30,6 @@ export type FeedbackRevision = {
   appliedAt: number
 }
 
-export type OllamaModel = {
-  name: string
-  size?: number
-}
-
-const ollamaUrl = 'http://localhost:11434'
 const storageKey = 'thimble-writer-v1'
 const defaults: Draft = {
   lore: '',
@@ -127,20 +122,14 @@ export function useStoryWriter() {
     loadingModels.value = true
     error.value = ''
     try {
-      const response = await fetch(`${ollamaUrl}/api/tags`)
-      if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
-      const data = await response.json()
-      models.value = (data.models ?? []).map((model: { name: string; size?: number }) => ({
-        name: model.name,
-        size: model.size,
-      }))
+      models.value = await ollamaClient.listModels()
       if (!models.value.some(model => model.name === draft.model)) {
         draft.model = models.value[0]?.name ?? ''
       }
       if (!models.value.length) status.value = 'No Ollama models found. Pull a model, then refresh.'
       else status.value = `${models.value.length} model${models.value.length === 1 ? '' : 's'} available`
     } catch {
-      error.value = `Can't reach Ollama at ${ollamaUrl}. Start Ollama and allow this app's origin with OLLAMA_ORIGINS.`
+      error.value = `Can't reach Ollama at ${ollamaClient.baseUrl}. Start Ollama and allow this app's origin with OLLAMA_ORIGINS.`
       status.value = ''
     } finally {
       loadingModels.value = false
@@ -212,12 +201,7 @@ export function useStoryWriter() {
   }
 
   function makeRequest(context: ReturnType<typeof buildContext>) {
-    const options = {
-      temperature: draft.temperature,
-      num_predict: draft.maxTokens,
-      num_ctx: draft.numCtx,
-      repeat_penalty: draft.repeatPenalty,
-    }
+    const options = ollamaRequestOptions(draft)
     const system = [
       'You are a fiction co-writer. Continue the story in the same voice and tense.',
       'Write only story text, with no notes, titles, or commentary.',
@@ -237,9 +221,9 @@ export function useStoryWriter() {
         context.story ? `[Story text kept verbatim]\n${context.story}` : '',
       ].filter(Boolean).join('\n\n')
       return {
-        url: `${ollamaUrl}/api/generate`,
-        body: { model: draft.model, prompt: rawPrompt, stream: true, options },
-        output: (json: { response?: string }) => json.response ?? '',
+        kind: 'generate' as const,
+        prompt: rawPrompt,
+        options,
       }
     }
 
@@ -257,14 +241,9 @@ export function useStoryWriter() {
     ].filter(Boolean).join('\n\n')
 
     return {
-      url: `${ollamaUrl}/api/chat`,
-      body: {
-        model: draft.model,
-        stream: true,
-        options,
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      },
-      output: (json: { message?: { content?: string } }) => json.message?.content ?? '',
+      kind: 'chat' as const,
+      options,
+      messages: [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }],
     }
   }
 
@@ -296,22 +275,19 @@ export function useStoryWriter() {
         if (source.length > sourceBudget) {
           throw new Error('A paragraph is longer than the summarizer context budget. Increase the context size or split that paragraph.')
         }
-        const response = await fetch(`${ollamaUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: draft.model,
-            stream: false,
-            options: { temperature: 0.3, num_predict: summaryReplyTokens, num_ctx: draft.numCtx },
-            messages: [
-              { role: 'system', content: summarySystem },
-              { role: 'user', content: `Story section:\n${source}\n\nSummary:` },
-            ],
+        const response = await ollamaClient.chat({
+          model: draft.model,
+          options: ollamaRequestOptions(draft, {
+            temperature: 0.3,
+            maxTokens: summaryReplyTokens,
+            repeatPenalty: null,
           }),
+          messages: [
+            { role: 'system', content: summarySystem },
+            { role: 'user', content: `Story section:\n${source}\n\nSummary:` },
+          ],
         })
-        if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
-        const data = await response.json()
-        const summary = (data.message?.content ?? '').replace(/\s+/g, ' ').trim()
+        const summary = response.replace(/\s+/g, ' ').trim()
         if (!summary) throw new Error('Ollama returned an empty section summary.')
         draft.summaries.push({
           id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -409,24 +385,12 @@ export function useStoryWriter() {
           `Selected passage to replace:\n${comment.source}`,
           `Feedback for this passage:\n${comment.instruction}`,
         ].filter(Boolean).join('\n\n')
-        const response = await fetch(`${ollamaUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: draft.model,
-            stream: false,
-            options: {
-              temperature: Math.min(draft.temperature, 0.5),
-              num_predict: draft.maxTokens,
-              num_ctx: draft.numCtx,
-              repeat_penalty: draft.repeatPenalty,
-            },
-            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-          }),
+        const response = await ollamaClient.chat({
+          model: draft.model,
+          options: ollamaRequestOptions(draft, { temperature: Math.min(draft.temperature, 0.5) }),
+          messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         })
-        if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
-        const data = await response.json()
-        const replacement = (data.message?.content ?? '').trim()
+        const replacement = response.trim()
         if (!replacement) throw new Error('Ollama returned an empty passage revision.')
 
         // Replace exactly the selected range; the surrounding context is sent only as guidance.
@@ -482,83 +446,63 @@ export function useStoryWriter() {
     try {
       if (context.lore) {
         status.value = 'Selecting relevant lore…'
-        const response = await fetch(`${ollamaUrl}/api/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model: draft.model,
-            stream: false,
-            options: {
-              temperature: Math.min(draft.temperature, 0.3),
-              num_predict: Math.min(draft.maxTokens, 400),
-              num_ctx: draft.numCtx,
-            },
-            messages: [
-              {
-                role: 'system',
-                content: [
-                  'You prepare concise, relevant lore for a fiction co-writer.',
-                  'Use the lore as the source of truth. Use the recent section summaries only to determine which lore is relevant to the current point in the story.',
-                  'Return only the relevant established facts, names, relationships, constraints, and unresolved details. Do not repeat story events from the summaries, invent facts, or add prose.',
-                  'If no lore is relevant, reply with an empty response.',
-                ].join(' '),
-              },
-              {
-                role: 'user',
-                content: [
-                  `Lore:\n${context.lore}`,
-                  context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
-                  draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
-                  'Relevant lore:',
-                ].filter(Boolean).join('\n\n'),
-              },
-            ],
+        context.lore = (await ollamaClient.chat({
+          model: draft.model,
+          options: ollamaRequestOptions(draft, {
+            temperature: Math.min(draft.temperature, 0.3),
+            maxTokens: Math.min(draft.maxTokens, 400),
+            repeatPenalty: null,
           }),
-        })
-        if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
-        const data = await response.json()
-        context.lore = (data.message?.content ?? '').trim()
+          signal: controller.signal,
+          messages: [
+            {
+              role: 'system',
+              content: [
+                'You prepare concise, relevant lore for a fiction co-writer.',
+                'Use the lore as the source of truth. Use the recent section summaries only to determine which lore is relevant to the current point in the story.',
+                'Return only the relevant established facts, names, relationships, constraints, and unresolved details. Do not repeat story events from the summaries, invent facts, or add prose.',
+                'If no lore is relevant, reply with an empty response.',
+              ].join(' '),
+            },
+            {
+              role: 'user',
+              content: [
+                `Lore:\n${context.lore}`,
+                context.summaries ? `Most recent summarized story sections:\n${context.summaries}` : '',
+                draft.prompt.trim() ? `Current writing direction:\n${draft.prompt.trim()}` : '',
+                'Relevant lore:',
+              ].filter(Boolean).join('\n\n'),
+            },
+          ],
+        })).trim()
         if (!context.lore) status.value = 'Writing without relevant lore…'
       }
 
       if (context.lore) status.value = 'Writing…'
       else if (!draft.lore.trim()) status.value = 'Writing…'
       const request = makeRequest(context)
-      const response = await fetch(request.url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request.body),
-        signal: controller.signal,
-      })
-      if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
-      if (!response.body) throw new Error('Ollama did not return a response stream.')
-
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      const consumeLine = (line: string) => {
-        if (!line.trim()) return
-        const json = JSON.parse(line)
-        if (json.error) throw new Error(json.error)
-        generatedText += request.output(json)
+      const appendGeneratedText = (text: string) => {
+        generatedText += text
         draft.story = baseStory + separator + generatedText
-        if (json.done) status.value = 'Writing complete'
       }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) consumeLine(line)
+      if (request.kind === 'generate') {
+        await ollamaClient.streamGenerate({
+          model: draft.model,
+          prompt: request.prompt,
+          options: request.options,
+          signal: controller.signal,
+        }, appendGeneratedText)
+      } else {
+        await ollamaClient.streamChat({
+          model: draft.model,
+          messages: request.messages,
+          options: request.options,
+          signal: controller.signal,
+        }, appendGeneratedText)
       }
-      buffer += decoder.decode()
-      if (buffer.trim()) consumeLine(buffer)
 
       canUndo.value = draft.story !== baseStory
+      if (generatedText.trim()) status.value = 'Writing complete'
       if (!generatedText.trim()) status.value = 'The model returned no text.'
     } catch (cause) {
       if (cause instanceof Error && cause.name !== 'AbortError') {
