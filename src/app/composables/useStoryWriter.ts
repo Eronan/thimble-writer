@@ -2,6 +2,7 @@ import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { locateSection, paragraphsWithOffsets, planStorySections, type StorySectionSummary } from '~/utils/storySections'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 import { ollamaClient, ollamaRequestOptions, type OllamaModel } from '~/clients/ollamaClient'
+import { buildStoryContext, charsPerToken, makeStoryRequest, summaryReplyTokens, summarySystem } from '~/utils/storyPrompt'
 
 export type PromptMode = 'instruct' | 'continue'
 
@@ -49,11 +50,6 @@ const defaults: Draft = {
   writerParagraphs: 3,
   sectionParagraphs: 4,
 }
-
-const summarySystem = 'Summarize this story section in one or two concise sentences, in past tense. Name the characters and preserve important events and changes. Reply with only the summary.'
-const summaryReplyTokens = 120
-const charsPerToken = 3.5
-const summaryReplyReserve = 180
 
 export function useStoryWriter() {
   const draft = reactive<Draft>({ ...defaults })
@@ -136,129 +132,6 @@ export function useStoryWriter() {
       status.value = ''
     } finally {
       loadingModels.value = false
-    }
-  }
-
-  function buildContext() {
-    // Bound every prompt by the configured context window so generation has room to finish;
-    // otherwise a long draft can crowd out the requested continuation or exceed the model limit.
-    const inputTokens = Math.max(0, draft.numCtx - draft.maxTokens - summaryReplyReserve)
-    let remainingChars = Math.max(0, Math.floor(inputTokens * charsPerToken))
-    const lore = draft.lore.trim()
-    const prompt = draft.prompt.trim()
-    const paragraphs = paragraphsWithOffsets(draft.story)
-    const recentParagraphCount = Math.max(1, Math.floor(draft.writerParagraphs) || defaults.writerParagraphs)
-    const recentStart = paragraphs.at(-recentParagraphCount)?.start ?? draft.story.length
-    const validSummaries = draft.summaries
-      .map(section => ({ section, range: locateSection(draft.story, section) }))
-      // A stale/overlapping summary must not hide the recent scene: the model needs its exact
-      // wording to continue naturally, while summaries are intended only for older material.
-      .filter(entry => entry.section.summary.trim() && entry.range && entry.range.end <= recentStart)
-    const uncompressedParagraphs = paragraphs.filter(paragraph =>
-      !validSummaries.some(({ range }) => range && paragraph.start < range.end && paragraph.end > range.start),
-    )
-    const uncompressedTextLength = uncompressedParagraphs.reduce((length, paragraph) => length + paragraph.text.length + 2, 0)
-    const fixedChars = prompt.length + summarySystem.length + 180
-    remainingChars = Math.max(0, remainingChars - fixedChars)
-    const storyBudget = Math.min(uncompressedTextLength, Math.floor(remainingChars * 0.6))
-    let storyTail = ''
-    let usedStoryChars = 0
-    // Favor the immediate lead-in over distant prose. Keep paragraph boundaries intact where
-    // possible so the model sees readable prose rather than a fragment stitched across scenes.
-    for (let index = uncompressedParagraphs.length - 1; index >= 0; index--) {
-      const entry = uncompressedParagraphs[index]
-      if (!entry) continue
-      const paragraph = entry.text
-      const additionalChars = paragraph.length + (storyTail ? 2 : 0)
-      if (usedStoryChars + additionalChars <= storyBudget) {
-        storyTail = storyTail ? `${paragraph}\n\n${storyTail}` : paragraph
-        usedStoryChars += additionalChars
-        continue
-      }
-      if (!storyTail && storyBudget > 0) {
-        storyTail = paragraph.slice(-storyBudget)
-        usedStoryChars = storyTail.length
-      }
-      break
-    }
-    remainingChars -= usedStoryChars
-
-    // Reserve space for summaries and cap lore before the selection pass. Smaller, relevant lore
-    // gives lower-parameter models useful world facts without asking them to carry the full bible.
-    const loreBudget = Math.floor(remainingChars * 0.45)
-    const loreContext = lore.slice(0, loreBudget)
-    remainingChars -= loreContext.length
-
-    // Summaries help the model remember older events, but stay distinct from canonical story text
-    // so a compressed retelling is never mistaken for prose to continue or alter.
-    // Plain labels are deliberate: prompts are consumed as text, so XML would add syntax without
-    // giving the app any structured output to validate or parse.
-    const summaryBudget = remainingChars
-    const selectedSummaries: string[] = []
-    let usedSummaryChars = 0
-    for (const { section } of [...validSummaries].reverse()) {
-      const line = `- ${section.summary.trim()}`
-      if (!section.summary.trim()) continue
-      if (usedSummaryChars + line.length > summaryBudget) break
-      selectedSummaries.unshift(line)
-      usedSummaryChars += line.length
-    }
-
-    return {
-      lore: loreContext,
-      summaries: selectedSummaries.join('\n'),
-      story: storyTail,
-      continueCurrentParagraph: Boolean(draft.story.trim())
-        && !/(?:\r\n|\n)[\t ]*$/.test(draft.story),
-    }
-  }
-
-  function makeRequest(context: ReturnType<typeof buildContext>) {
-    const options = ollamaRequestOptions(draft)
-    const system = [
-      'You are a fiction co-writer. Continue the story in the same voice and tense.',
-      'Write only story text, with no notes, titles, or commentary.',
-      context.continueCurrentParagraph
-        ? 'Continue directly from the story’s final character and remain in the current paragraph. Do not start a new paragraph.'
-        : '',
-      context.lore ? `Lore and story facts:\n${context.lore}` : '',
-      context.summaries ? `Story so far (section summaries):\n${context.summaries}` : '',
-    ].filter(Boolean).join('\n\n')
-
-    if (draft.mode === 'continue') {
-      // Raw mode is explicitly a single completion prompt; adding chat-style role framing would
-      // change the behavior users selected for direct continuation.
-      const rawPrompt = [
-        context.lore ? `[Lore]\n${context.lore}` : '',
-        context.summaries ? `[Story memory]\n${context.summaries}` : '',
-        draft.prompt.trim() ? `[Next prompt: ${draft.prompt.trim()}]` : '',
-        context.continueCurrentParagraph ? '[Continue on the same line and in the same paragraph.]' : '',
-        context.story ? `[Story text kept verbatim]\n${context.story}` : '',
-      ].filter(Boolean).join('\n\n')
-      return {
-        kind: 'generate' as const,
-        prompt: rawPrompt,
-        options,
-      }
-    }
-
-    const user = [
-      context.story ? `Story text kept verbatim:\n${context.story}` : '',
-      draft.prompt.trim()
-        ? context.continueCurrentParagraph
-          ? `Continue directly from the final character and stay in the same paragraph, then follow this direction: ${draft.prompt.trim()}`
-          : `Write the next part of the story. What happens next: ${draft.prompt.trim()}`
-        : context.continueCurrentParagraph
-          ? 'Continue directly from the final character and stay in the same paragraph.'
-        : draft.story.trim()
-          ? 'Continue the story with the next paragraph.'
-          : 'Write the opening paragraph of the story.',
-    ].filter(Boolean).join('\n\n')
-
-    return {
-      kind: 'chat' as const,
-      options,
-      messages: [{ role: 'system' as const, content: system }, { role: 'user' as const, content: user }],
     }
   }
 
@@ -460,7 +333,15 @@ export function useStoryWriter() {
     // The user's rule is structural: a new line starts a paragraph; punctuation alone does not.
     const startsNewParagraph = /(?:\r\n|\n)[\t ]*$/.test(baseStory)
     const alreadyHasParagraphBreak = /(?:\r\n|\n){2,}[\t ]*$/.test(baseStory)
-    const context = buildContext()
+    const context = buildStoryContext({
+      lore: draft.lore,
+      prompt: draft.prompt,
+      story: baseStory,
+      summaries: draft.summaries,
+      maxTokens: draft.maxTokens,
+      numCtx: draft.numCtx,
+      writerParagraphs: draft.writerParagraphs,
+    })
     context.continueCurrentParagraph = Boolean(baseStory.trim()) && !startsNewParagraph
     const separator = startsNewParagraph && !alreadyHasParagraphBreak ? '\n' : ''
     let generatedText = ''
@@ -505,7 +386,15 @@ export function useStoryWriter() {
 
       if (context.lore) status.value = 'Writing…'
       else if (!draft.lore.trim()) status.value = 'Writing…'
-      const request = makeRequest(context)
+      const request = makeStoryRequest({
+        mode: draft.mode,
+        prompt: draft.prompt,
+        story: baseStory,
+        temperature: draft.temperature,
+        maxTokens: draft.maxTokens,
+        numCtx: draft.numCtx,
+        repeatPenalty: draft.repeatPenalty,
+      }, context)
       // Show partial prose as it arrives so the user can monitor or stop generation without
       // waiting for a complete response.
       const appendGeneratedText = (text: string) => {

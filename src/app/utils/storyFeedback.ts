@@ -30,6 +30,16 @@ type DiffOperation<T> = {
   afterValue?: T
 }
 
+function requiredAt<T>(values: readonly T[], index: number): T {
+  const value = values[index]
+  if (value === undefined) throw new RangeError(`Diff index ${index} is outside the sequence`)
+  return value
+}
+
+function frontierAt(frontier: Int32Array, index: number): number {
+  return frontier[index] ?? -1
+}
+
 function diffSequence<T>(before: T[], after: T[], equal: (left: T, right: T) => boolean): DiffOperation<T>[] {
   // Minimal edit sequences retain unchanged phrases around a revision, making it easier to review
   // whether the model followed feedback without rereading two unrelated full passages.
@@ -46,14 +56,14 @@ function diffSequence<T>(before: T[], after: T[], equal: (left: T, right: T) => 
     for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
       const index = offset + diagonal
       let beforeIndex = diagonal === -distance
-        || (diagonal !== distance && frontier[index - 1] < frontier[index + 1])
-        ? frontier[index + 1]
-        : frontier[index - 1] + 1
+        || (diagonal !== distance && frontierAt(frontier, index - 1) < frontierAt(frontier, index + 1))
+        ? frontierAt(frontier, index + 1)
+        : frontierAt(frontier, index - 1) + 1
       let afterIndex = beforeIndex - diagonal
       while (
         beforeIndex < before.length
         && afterIndex < after.length
-        && equal(before[beforeIndex], after[afterIndex])
+        && equal(requiredAt(before, beforeIndex), requiredAt(after, afterIndex))
       ) {
         beforeIndex++
         afterIndex++
@@ -67,29 +77,37 @@ function diffSequence<T>(before: T[], after: T[], equal: (left: T, right: T) => 
   let beforeIndex = before.length
   let afterIndex = after.length
   for (let step = distance; step > 0; step--) {
-    const previousFrontier = trace[step]
+    const previousFrontier = requiredAt(trace, step)
     const diagonal = beforeIndex - afterIndex
     const previousDiagonal = diagonal === -step
-      || (diagonal !== step && previousFrontier[offset + diagonal - 1] < previousFrontier[offset + diagonal + 1])
+      || (diagonal !== step && frontierAt(previousFrontier, offset + diagonal - 1) < frontierAt(previousFrontier, offset + diagonal + 1))
       ? diagonal + 1
       : diagonal - 1
-    const previousBeforeIndex = previousFrontier[offset + previousDiagonal]
+    const previousBeforeIndex = frontierAt(previousFrontier, offset + previousDiagonal)
     const previousAfterIndex = previousBeforeIndex - previousDiagonal
 
     while (beforeIndex > previousBeforeIndex && afterIndex > previousAfterIndex) {
-      reversed.push({ type: 'equal', value: before[--beforeIndex], afterValue: after[--afterIndex] })
+      reversed.push({
+        type: 'equal',
+        value: requiredAt(before, --beforeIndex),
+        afterValue: requiredAt(after, --afterIndex),
+      })
     }
     if (beforeIndex === previousBeforeIndex) {
-      reversed.push({ type: 'added', value: after[--afterIndex] })
+      reversed.push({ type: 'added', value: requiredAt(after, --afterIndex) })
     } else {
-      reversed.push({ type: 'removed', value: before[--beforeIndex] })
+      reversed.push({ type: 'removed', value: requiredAt(before, --beforeIndex) })
     }
   }
   while (beforeIndex > 0 && afterIndex > 0) {
-    reversed.push({ type: 'equal', value: before[--beforeIndex], afterValue: after[--afterIndex] })
+    reversed.push({
+      type: 'equal',
+      value: requiredAt(before, --beforeIndex),
+      afterValue: requiredAt(after, --afterIndex),
+    })
   }
-  while (beforeIndex > 0) reversed.push({ type: 'removed', value: before[--beforeIndex] })
-  while (afterIndex > 0) reversed.push({ type: 'added', value: after[--afterIndex] })
+  while (beforeIndex > 0) reversed.push({ type: 'removed', value: requiredAt(before, --beforeIndex) })
+  while (afterIndex > 0) reversed.push({ type: 'added', value: requiredAt(after, --afterIndex) })
   return reversed.reverse()
 }
 
@@ -151,14 +169,15 @@ export function getFeedbackDiff(before: string, after: string): FeedbackDiffRun[
   let prefixLength = 0
   while (prefixLength < oldCharacters.length
     && prefixLength < newCharacters.length
-    && oldCharacters[prefixLength] === newCharacters[prefixLength]) {
+    && requiredAt(oldCharacters, prefixLength) === requiredAt(newCharacters, prefixLength)) {
     prefixLength++
   }
 
   let suffixLength = 0
   while (suffixLength < oldCharacters.length - prefixLength
     && suffixLength < newCharacters.length - prefixLength
-    && oldCharacters[oldCharacters.length - suffixLength - 1] === newCharacters[newCharacters.length - suffixLength - 1]) {
+    && requiredAt(oldCharacters, oldCharacters.length - suffixLength - 1)
+      === requiredAt(newCharacters, newCharacters.length - suffixLength - 1)) {
     suffixLength++
   }
 
@@ -177,14 +196,14 @@ export function getFeedbackDiff(before: string, after: string): FeedbackDiffRun[
     for (let diagonal = -distance; diagonal <= distance; diagonal += 2) {
       const index = offset + diagonal
       let oldIndex = diagonal === -distance
-        || (diagonal !== distance && frontier[index - 1] < frontier[index + 1])
-        ? frontier[index + 1]
-        : frontier[index - 1] + 1
+        || (diagonal !== distance && frontierAt(frontier, index - 1) < frontierAt(frontier, index + 1))
+        ? frontierAt(frontier, index + 1)
+        : frontierAt(frontier, index - 1) + 1
       let newIndex = oldIndex - diagonal
       while (
         oldIndex < oldMiddle.length
         && newIndex < newMiddle.length
-        && oldMiddle[oldIndex] === newMiddle[newIndex]
+        && requiredAt(oldMiddle, oldIndex) === requiredAt(newMiddle, newIndex)
       ) {
         oldIndex++
         newIndex++
@@ -204,35 +223,35 @@ export function getFeedbackDiff(before: string, after: string): FeedbackDiffRun[
   let oldIndex = oldMiddle.length
   let newIndex = newMiddle.length
   for (let step = distance; step > 0; step--) {
-    const previousFrontier = trace[step]
+    const previousFrontier = requiredAt(trace, step)
     const diagonal = oldIndex - newIndex
     const previousDiagonal = diagonal === -step
-      || (diagonal !== step && previousFrontier[offset + diagonal - 1] < previousFrontier[offset + diagonal + 1])
+      || (diagonal !== step && frontierAt(previousFrontier, offset + diagonal - 1) < frontierAt(previousFrontier, offset + diagonal + 1))
       ? diagonal + 1
       : diagonal - 1
-    const previousOldIndex = previousFrontier[offset + previousDiagonal]
+    const previousOldIndex = frontierAt(previousFrontier, offset + previousDiagonal)
     const previousNewIndex = previousOldIndex - previousDiagonal
 
     while (oldIndex > previousOldIndex && newIndex > previousNewIndex) {
-      append('equal', oldMiddle[oldIndex - 1])
+      append('equal', requiredAt(oldMiddle, oldIndex - 1))
       oldIndex--
       newIndex--
     }
     if (oldIndex === previousOldIndex) {
-      append('added', newMiddle[newIndex - 1])
+      append('added', requiredAt(newMiddle, newIndex - 1))
       newIndex--
     } else {
-      append('removed', oldMiddle[oldIndex - 1])
+      append('removed', requiredAt(oldMiddle, oldIndex - 1))
       oldIndex--
     }
   }
   while (oldIndex > 0 && newIndex > 0) {
-    append('equal', oldMiddle[oldIndex - 1])
+    append('equal', requiredAt(oldMiddle, oldIndex - 1))
     oldIndex--
     newIndex--
   }
-  while (oldIndex > 0) append('removed', oldMiddle[--oldIndex])
-  while (newIndex > 0) append('added', newMiddle[--newIndex])
+  while (oldIndex > 0) append('removed', requiredAt(oldMiddle, --oldIndex))
+  while (newIndex > 0) append('added', requiredAt(newMiddle, --newIndex))
 
   const middleRuns = reversed.reverse().map(run => ({ ...run }))
   const runs: FeedbackDiffRun[] = []
