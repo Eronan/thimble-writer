@@ -75,14 +75,16 @@ export function planStorySections(
   let run: StoryParagraph[] = []
 
   const addRun = () => {
-    if (run.length) {
-      sections.push(story.slice(run[0].start, run[run.length - 1].end))
-      run = []
-    }
+    const first = run[0]
+    const last = run.at(-1)
+    if (!first || !last) return
+    sections.push(story.slice(first.start, last.end))
+    run = []
   }
 
   for (let index = 0; index < eligibleCount; index++) {
     const paragraph = paragraphs[index]
+    if (!paragraph) continue
     if (covered.has(index)) {
       addRun()
       continue
@@ -95,7 +97,8 @@ export function planStorySections(
     }
     // Cap source length as well as paragraph count so a single long section cannot crowd out the
     // summarizer's instructions or exceed the configured model context.
-    if (run.length && paragraph.end - run[0].start > maxSourceChars) addRun()
+    const runStart = run[0]?.start
+    if (runStart !== undefined && paragraph.end - runStart > maxSourceChars) addRun()
     run.push(paragraph)
     if (run.length >= sectionSize) addRun()
   }
