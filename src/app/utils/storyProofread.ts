@@ -22,6 +22,7 @@ export type AnchoredProofreadSuggestion = ProofreadSuggestion & {
 export type ParsedProofreadResponse = {
   comments: ProofreadSuggestion[]
   incomplete: boolean
+  skipped: number
 }
 
 export const proofreadResponseFormat = {
@@ -193,30 +194,31 @@ function extractJsonValue(response: string): unknown {
   throw new Error(`Ollama returned invalid structured proofreading data. Response begins: ${excerpt || '(empty response)'}`)
 }
 
-function parseProofreadComments(comments: unknown[]): ProofreadSuggestion[] {
-  return comments.map((comment, index) => {
-    if (
-      !comment
-      || typeof comment !== 'object'
-      || !('quote' in comment) || typeof comment.quote !== 'string'
-      || !('before' in comment) || typeof comment.before !== 'string'
-      || !('after' in comment) || typeof comment.after !== 'string'
-      || !('issue' in comment) || typeof comment.issue !== 'string'
-      || !('suggestion' in comment) || typeof comment.suggestion !== 'string'
-      || !comment.quote
-      || !comment.issue.trim()
-      || !comment.suggestion.trim()
-    ) {
-      throw new Error(`Ollama returned an incomplete proofreading comment at position ${index + 1}.`)
+function parseProofreadComments(comments: unknown[]): { comments: ProofreadSuggestion[]; skipped: number } {
+  const parsed: ProofreadSuggestion[] = []
+  let skipped = 0
+  for (const comment of comments) {
+    if (!comment || typeof comment !== 'object') {
+      skipped++
+      continue
     }
-    return {
-      quote: comment.quote,
-      before: comment.before,
-      after: comment.after,
-      issue: comment.issue.trim(),
-      suggestion: comment.suggestion.trim(),
+    const candidate = comment as Record<string, unknown>
+    const quote = typeof candidate.quote === 'string' ? candidate.quote.trim() : ''
+    const issue = typeof candidate.issue === 'string' ? candidate.issue.trim() : ''
+    const suggestion = typeof candidate.suggestion === 'string' ? candidate.suggestion.trim() : ''
+    if (!quote || !issue || !suggestion) {
+      skipped++
+      continue
     }
-  })
+    parsed.push({
+      quote,
+      before: typeof candidate.before === 'string' ? candidate.before : '',
+      after: typeof candidate.after === 'string' ? candidate.after : '',
+      issue,
+      suggestion,
+    })
+  }
+  return { comments: parsed, skipped }
 }
 
 function extractCompletedProofreadComments(response: string): ParsedProofreadResponse {
@@ -254,14 +256,14 @@ function extractCompletedProofreadComments(response: string): ParsedProofreadRes
         objectStart = -1
       }
     } else if (character === ']' && objectDepth === 0) {
-      return { comments: parseProofreadComments(comments), incomplete: false }
+      return { ...parseProofreadComments(comments), incomplete: false }
     }
   }
 
   if (!comments.length) {
     throw new Error('Ollama returned truncated proofreading data without any complete comments.')
   }
-  return { comments: parseProofreadComments(comments), incomplete: true }
+  return { ...parseProofreadComments(comments), incomplete: true }
 }
 
 export function parseProofreadResponse(response: string): ParsedProofreadResponse {
@@ -270,7 +272,7 @@ export function parseProofreadResponse(response: string): ParsedProofreadRespons
     if (!parsed || typeof parsed !== 'object' || !('comments' in parsed) || !Array.isArray(parsed.comments)) {
       throw new Error('Ollama returned structured proofreading data without a comments list.')
     }
-    return { comments: parseProofreadComments(parsed.comments), incomplete: false }
+    return { ...parseProofreadComments(parsed.comments), incomplete: false }
   } catch (cause) {
     if (cause instanceof Error && /incomplete proofreading comment/.test(cause.message)) {
       throw cause
@@ -286,13 +288,14 @@ export function anchorProofreadSuggestions(
   const comments: AnchoredProofreadSuggestion[] = []
   let skipped = 0
   for (const suggestion of suggestions) {
-    let matchStart = -1
+    const exactMatches: number[] = []
+    const quoteMatches: number[] = []
     let searchFrom = 0
-    let ambiguous = false
     while (true) {
       const candidate = chunk.text.indexOf(suggestion.quote, searchFrom)
       if (candidate === -1) break
       searchFrom = candidate + 1
+      quoteMatches.push(candidate)
       const beforeStart = candidate - suggestion.before.length
       const afterStart = candidate + suggestion.quote.length
       if (
@@ -300,19 +303,22 @@ export function anchorProofreadSuggestions(
         && chunk.text.slice(beforeStart, candidate) === suggestion.before
         && chunk.text.slice(afterStart, afterStart + suggestion.after.length) === suggestion.after
       ) {
-        if (matchStart !== -1) {
-          ambiguous = true
-          break
-        }
-        matchStart = candidate
+        exactMatches.push(candidate)
       }
     }
-    if (matchStart === -1 || ambiguous) {
+    const matchStart = exactMatches.length === 1
+      ? exactMatches[0]
+      : exactMatches.length === 0 && quoteMatches.length === 1
+        ? quoteMatches[0]
+        : -1
+    if (matchStart === -1) {
       skipped++
       continue
     }
     comments.push({
       ...suggestion,
+      before: chunk.text.slice(Math.max(0, matchStart - 80), matchStart),
+      after: chunk.text.slice(matchStart + suggestion.quote.length, matchStart + suggestion.quote.length + 80),
       start: chunk.start + matchStart,
       end: chunk.start + matchStart + suggestion.quote.length,
     })

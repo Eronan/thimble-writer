@@ -56,11 +56,35 @@ test('structured proofread responses parse into comments and reject malformed it
       suggestion: 'Replace with “an error”.',
     }],
     incomplete: false,
+    skipped: 0,
   })
-  assert.deepEqual(parseProofreadResponse('```json\n{"comments":[]}\n```'), { comments: [], incomplete: false })
-  assert.deepEqual(parseProofreadResponse('Here are the comments:\n{"comments":[]}'), { comments: [], incomplete: false })
+  assert.deepEqual(parseProofreadResponse('```json\n{"comments":[]}\n```'), { comments: [], incomplete: false, skipped: 0 })
+  assert.deepEqual(parseProofreadResponse('Here are the comments:\n{"comments":[]}'), { comments: [], incomplete: false, skipped: 0 })
   assert.throws(() => parseProofreadResponse('not json'), /invalid structured/)
-  assert.throws(() => parseProofreadResponse('{"comments":[{"quote":"lost"}]}'), /incomplete/)
+  assert.deepEqual(parseProofreadResponse('{"comments":[{"quote":"lost"}]}'), {
+    comments: [],
+    incomplete: false,
+    skipped: 1,
+  })
+})
+
+test('proofreading skips non-actionable comments and tolerates missing context fields', () => {
+  assert.deepEqual(parseProofreadResponse(JSON.stringify({
+    comments: [
+      { quote: 'No error', issue: 'No error', suggestion: '' },
+      { quote: 'they was', issue: 'Grammar', suggestion: 'Change to “they were”.' },
+    ],
+  })), {
+    comments: [{
+      quote: 'they was',
+      before: '',
+      after: '',
+      issue: 'Grammar',
+      suggestion: 'Change to “they were”.',
+    }],
+    incomplete: false,
+    skipped: 1,
+  })
 })
 
 test('truncated proofreading output keeps only complete comments', () => {
@@ -88,6 +112,7 @@ test('truncated proofreading output keeps only complete comments', () => {
       suggestion: 'Change to an error.',
     }],
     incomplete: true,
+    skipped: 0,
   })
 })
 
@@ -120,4 +145,37 @@ test('proofread suggestions anchor exactly and use context to disambiguate repea
     { start: 51, end: 54, quote: 'fox' },
   ])
   assert.equal(result.skipped, 2)
+})
+
+test('proofreading repairs incorrect context for a unique quote but skips ambiguous matches', () => {
+  const chunk = { start: 10, text: 'Before the error happened. Then the error ended.' }
+  const result = anchorProofreadSuggestions(chunk, [
+    {
+      quote: 'happened.',
+      before: 'incorrect context',
+      after: 'incorrect context',
+      issue: 'Wording',
+      suggestion: 'Revise the wording.',
+    },
+    {
+      quote: 'the',
+      before: 'incorrect context',
+      after: 'incorrect context',
+      issue: 'Wording',
+      suggestion: 'Revise the wording.',
+    },
+  ])
+
+  assert.deepEqual(result.comments.map(({ start, end, before, after }) => ({
+    start,
+    end,
+    before,
+    after,
+  })), [{
+    start: 27,
+    end: 36,
+    before: 'Before the error ',
+    after: ' Then the error ended.',
+  }])
+  assert.equal(result.skipped, 1)
 })

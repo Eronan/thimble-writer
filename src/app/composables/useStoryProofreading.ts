@@ -87,6 +87,7 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
         })
         const parsed = parseProofreadResponse(response)
         if (parsed.incomplete) truncatedResponses++
+        skipped += parsed.skipped
         const anchored = anchorProofreadSuggestions(chunk, parsed.comments)
         suggestions.push(...anchored.comments)
         skipped += anchored.skipped
