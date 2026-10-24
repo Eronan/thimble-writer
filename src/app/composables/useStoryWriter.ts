@@ -1,5 +1,6 @@
 import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { locateSection, paragraphsWithOffsets, planStorySections, type StorySectionSummary } from '~/utils/storySections'
+import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 
 export type PromptMode = 'instruct' | 'continue'
 
@@ -7,6 +8,8 @@ export type Draft = {
   lore: string
   story: string
   summaries: StorySectionSummary[]
+  feedback: StoryFeedback[]
+  feedbackRevisions: FeedbackRevision[]
   prompt: string
   model: string
   mode: PromptMode
@@ -16,6 +19,14 @@ export type Draft = {
   repeatPenalty: number
   writerParagraphs: number
   sectionParagraphs: number
+}
+
+export type FeedbackRevision = {
+  id: string
+  instruction: string
+  before: string
+  after: string
+  appliedAt: number
 }
 
 export type OllamaModel = {
@@ -29,6 +40,8 @@ const defaults: Draft = {
   lore: '',
   story: '',
   summaries: [],
+  feedback: [],
+  feedbackRevisions: [],
   prompt: '',
   model: '',
   mode: 'instruct',
@@ -53,8 +66,10 @@ export function useStoryWriter() {
   const error = ref('')
   const status = ref('')
   const summarizing = ref(false)
+  const revisingFeedback = ref(false)
   const canUndo = ref(false)
   const previousStory = ref('')
+  let previousFeedbackRevisions: FeedbackRevision[] = []
   const abortController = shallowRef<AbortController | null>(null)
   const selectedModelSize = computed(() => models.value.find(model => model.name === draft.model)?.size)
   let readyToSave = false
@@ -72,6 +87,23 @@ export function useStoryWriter() {
               && typeof section?.summary === 'string',
             )
           : []
+        draft.feedback = Array.isArray(parsed.feedback)
+          ? parsed.feedback.filter((comment: StoryFeedback) =>
+              typeof comment?.id === 'string'
+              && typeof comment?.source === 'string'
+              && typeof comment?.instruction === 'string'
+              && Number.isInteger(comment?.start),
+            )
+          : []
+        draft.feedbackRevisions = Array.isArray(parsed.feedbackRevisions)
+            ? parsed.feedbackRevisions.filter((revision: FeedbackRevision) =>
+                typeof revision?.id === 'string'
+                && typeof revision?.instruction === 'string'
+                && typeof revision?.before === 'string'
+                && typeof revision?.after === 'string'
+                && Number.isFinite(revision?.appliedAt),
+              )
+            : []
       }
     } catch {
       error.value = 'Could not load the saved draft from this browser.'
@@ -297,6 +329,129 @@ export function useStoryWriter() {
     }
   }
 
+  function addFeedback(selection: { start: number; end: number; text: string }, instruction: string) {
+    const { start, end, text } = selection
+    if (start < 0 || end <= start || end > draft.story.length || draft.story.slice(start, end) !== text) {
+      error.value = 'Select text that is still present in the story before adding feedback.'
+      return false
+    }
+    if (!instruction.trim()) {
+      error.value = 'Write a feedback instruction for the selected text.'
+      return false
+    }
+    // Keep queued targets disjoint so applying one revision never invalidates another target.
+    const overlaps = draft.feedback.some((comment) => {
+      const range = locateFeedback(draft.story, comment)
+      return range && start < range.end && end > range.start
+    })
+    if (overlaps) {
+      error.value = 'That selection overlaps an existing feedback comment. Remove or revise the existing comment first.'
+      return false
+    }
+    draft.feedback.push({
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      start,
+      source: text,
+      before: draft.story.slice(Math.max(0, start - 80), start),
+      after: draft.story.slice(end, end + 80),
+      instruction: instruction.trim(),
+    })
+    error.value = ''
+    status.value = 'Feedback added to the queue'
+    return true
+  }
+
+  async function applyFeedback(commentId?: string) {
+    const comments = commentId
+      ? draft.feedback.filter(comment => comment.id === commentId)
+      : [...draft.feedback]
+    if (revisingFeedback.value || generating.value || summarizing.value || !comments.length) return
+    if (!draft.model) {
+      error.value = 'Choose an Ollama model before applying feedback.'
+      return
+    }
+
+    revisingFeedback.value = true
+    error.value = ''
+    status.value = commentId ? 'Applying comment…' : 'Applying feedback…'
+    previousStory.value = draft.story
+    previousFeedbackRevisions = [...draft.feedbackRevisions]
+    canUndo.value = false
+    let applied = 0
+    try {
+      // Re-locate each quote in the latest story so earlier edits cannot shift later targets.
+      for (const comment of comments) {
+        const range = locateFeedback(draft.story, comment)
+        if (!range) {
+          throw new Error(`Could not find the selected passage for feedback: “${comment.source.slice(0, 70)}”`)
+        }
+
+        const paragraphs = paragraphsWithOffsets(draft.story)
+        const firstParagraph = paragraphs.findIndex(paragraph => paragraph.start <= range.start && paragraph.end >= range.start)
+        const lastParagraph = paragraphs.findIndex(paragraph => paragraph.start < range.end && paragraph.end >= range.end)
+        const contextStart = paragraphs[Math.max(0, firstParagraph - 1)]?.start ?? range.start
+        const contextEnd = paragraphs[Math.min(paragraphs.length - 1, Math.max(lastParagraph, 0) + 1)]?.end ?? range.end
+        const surroundingText = draft.story.slice(contextStart, contextEnd)
+        const sectionSummaries = draft.summaries
+          .map(section => ({ section, range: locateSection(draft.story, section) }))
+          .filter(item => item.range && item.range.start <= range.end && item.range.end >= range.start)
+          .map(item => item.section.summary.trim())
+          .filter(Boolean)
+        const system = [
+          'You are a fiction editor revising a specific passage in a story.',
+          'Apply the feedback only to the selected passage. Return only the replacement passage, with no explanation, labels, or quotation marks.',
+          'Preserve the surrounding context, point of view, tense, and voice. Do not rewrite or repeat text outside the selected passage.',
+        ].join('\n')
+        const user = [
+          draft.lore.trim() ? `Lore:\n${draft.lore.trim()}` : '',
+          sectionSummaries.length ? `Relevant section summaries:\n${sectionSummaries.join('\n')}` : '',
+          `Surrounding story context (do not replace this entire context):\n${surroundingText}`,
+          `Selected passage to replace:\n${comment.source}`,
+          `Feedback for this passage:\n${comment.instruction}`,
+        ].filter(Boolean).join('\n\n')
+        const response = await fetch(`${ollamaUrl}/api/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: draft.model,
+            stream: false,
+            options: {
+              temperature: Math.min(draft.temperature, 0.5),
+              num_predict: draft.maxTokens,
+              num_ctx: draft.numCtx,
+              repeat_penalty: draft.repeatPenalty,
+            },
+            messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+          }),
+        })
+        if (!response.ok) throw new Error(`Ollama returned ${response.status}: ${await response.text()}`)
+        const data = await response.json()
+        const replacement = (data.message?.content ?? '').trim()
+        if (!replacement) throw new Error('Ollama returned an empty passage revision.')
+
+        // Replace exactly the selected range; the surrounding context is sent only as guidance.
+        draft.story = `${draft.story.slice(0, range.start)}${replacement}${draft.story.slice(range.end)}`
+        draft.feedbackRevisions.push({
+          id: `${comment.id}-${Date.now().toString(36)}`,
+          instruction: comment.instruction,
+          before: comment.source,
+          after: replacement,
+          appliedAt: Date.now(),
+        })
+        draft.feedback = draft.feedback.filter(item => item.id !== comment.id)
+        applied++
+        status.value = `Applied ${applied} comment${applied === 1 ? '' : 's'}`
+      }
+      status.value = `Applied ${applied} comment${applied === 1 ? '' : 's'}`
+    } catch (cause) {
+      error.value = cause instanceof Error ? cause.message : 'Could not apply feedback.'
+      status.value = applied ? `Applied ${applied}; remaining comments are still queued` : ''
+    } finally {
+      revisingFeedback.value = false
+      canUndo.value = draft.story !== previousStory.value
+    }
+  }
+
   async function writeNext() {
     if (generating.value) {
       abortController.value?.abort()
@@ -314,6 +469,7 @@ export function useStoryWriter() {
     abortController.value = controller
     const baseStory = draft.story
     previousStory.value = baseStory
+    previousFeedbackRevisions = [...draft.feedbackRevisions]
     canUndo.value = false
     // A newline, not sentence punctuation, is the explicit signal to start a new paragraph.
     const startsNewParagraph = /(?:\r\n|\n)[\t ]*$/.test(baseStory)
@@ -378,6 +534,7 @@ export function useStoryWriter() {
   function undo() {
     if (!canUndo.value) return
     draft.story = previousStory.value
+    draft.feedbackRevisions = previousFeedbackRevisions
     canUndo.value = false
     status.value = 'Last addition undone'
   }
@@ -390,7 +547,13 @@ export function useStoryWriter() {
     error,
     status,
     summarizing,
+    revisingFeedback,
     canUndo,
+    addFeedback,
+    applyFeedback,
+    removeFeedback: (id: string) => {
+      draft.feedback = draft.feedback.filter(comment => comment.id !== id)
+    },
     removeSummary: (id: string) => {
       draft.summaries = draft.summaries.filter(section => section.id !== id)
     },
