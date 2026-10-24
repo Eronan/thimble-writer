@@ -70,6 +70,15 @@ defineEmits<{ refresh: [] }>()
         <span>Repeat penalty <b>{{ Number(draft.repeatPenalty).toFixed(2) }}</b></span>
         <input v-model.number="draft.repeatPenalty" type="range" min="1" max="2" step="0.05">
       </label>
+      <label class="setting-field">
+        <span>Recent paragraphs kept in full</span>
+        <input v-model.number="draft.writerParagraphs" type="number" min="1" max="12" step="1">
+        <small>Newer paragraphs stay verbatim; older sections are summarized.</small>
+      </label>
+      <label class="setting-field">
+        <span>Paragraphs per summary section</span>
+        <input v-model.number="draft.sectionParagraphs" type="number" min="1" max="12" step="1">
+      </label>
       <p v-if="selectedModelSize" class="settings-note">
         Selected model size: {{ (selectedModelSize / 1_000_000_000).toFixed(1) }} GB
       </p>
