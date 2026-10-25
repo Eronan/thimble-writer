@@ -317,6 +317,7 @@ export function useStoryWriter() {
           'You are a fiction editor revising a specific passage in a story.',
           'Apply the feedback only to the selected passage. Return only the replacement passage, with no explanation, labels, or quotation marks.',
           'Preserve the surrounding context, point of view, tense, and voice. Do not rewrite or repeat text outside the selected passage.',
+          'If the change is purely grammatical, return only the corrected passage. If the change is stylistic, return a polished version that preserves the original meaning.',
         ].join('\n')
         const user = buildFeedbackRevisionContext({
           system,
