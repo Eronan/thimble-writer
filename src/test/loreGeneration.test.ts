@@ -7,11 +7,11 @@ import {
 } from '../app/utils/loreGeneration.ts'
 
 const draft = {
-  synopsis: 'A cartographer uncovers a moving city.',
-  guidance: 'Keep the tone intimate.',
+  synopsisSections: [{ id: 's1', title: '', text: 'A cartographer uncovers a moving city.' }],
+  guidanceSections: [{ id: 'g1', title: '', text: 'Keep the tone intimate.' }],
   characters: [],
   setting: [],
-} as Pick<Draft, 'synopsis' | 'guidance' | 'characters' | 'setting'>
+} as Pick<Draft, 'synopsisSections' | 'guidanceSections' | 'characters' | 'setting'>
 
 test('individual lore context includes only the selected entry, story setup, and its prompt', () => {
   const target = {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { LoreNote } from '~/utils/loreWorkspace'
+import type { ContextSection, LoreNote } from '~/utils/loreWorkspace'
 
 const { busy, modelAvailable, generatingLoreId, error, status } = defineProps<{
   busy: boolean
@@ -9,8 +9,8 @@ const { busy, modelAvailable, generatingLoreId, error, status } = defineProps<{
   status: string
 }>()
 
-const synopsis = defineModel<string>('synopsis', { required: true })
-const guidance = defineModel<string>('guidance', { required: true })
+const synopsisSections = defineModel<ContextSection[]>('synopsisSections', { required: true })
+const guidanceSections = defineModel<ContextSection[]>('guidanceSections', { required: true })
 const characters = defineModel<LoreNote[]>('characters', { required: true })
 const setting = defineModel<LoreNote[]>('setting', { required: true })
 const editingCharacterIds = ref(new Set<string>())
@@ -84,27 +84,27 @@ const emit = defineEmits<{
 
     <section class="lore-section-card">
       <div class="lore-section-group">
-        <h2>Story setup</h2>
-        <label class="lore-field">
-          <span>Synopsis</span>
-          <textarea
-            v-model="synopsis"
-            :disabled="busy"
-            aria-label="Story synopsis"
-            placeholder="The premise, central conflict, and where the story is headed…"
-            rows="4"
-          />
-        </label>
-        <label class="lore-field">
-          <span>Writing guidance</span>
-          <textarea
-            v-model="guidance"
-            :disabled="busy"
-            aria-label="Story writing guidance"
-            placeholder="Voice, themes, style, or constraints to keep in mind…"
-            rows="3"
-          />
-        </label>
+        <ContextSectionList
+          v-model="synopsisSections"
+          heading="Synopsis"
+          singular="synopsis"
+          id-prefix="synopsis"
+          placeholder="The premise, central conflict, and where the story is headed…"
+          :busy="busy"
+        />
+      </div>
+    </section>
+
+    <section class="lore-section-card">
+      <div class="lore-section-group">
+        <ContextSectionList
+          v-model="guidanceSections"
+          heading="Writing guidance"
+          singular="guidance"
+          id-prefix="guidance"
+          placeholder="Voice, themes, style, or constraints to keep in mind…"
+          :busy="busy"
+        />
       </div>
     </section>
 

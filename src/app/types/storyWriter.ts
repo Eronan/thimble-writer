@@ -1,6 +1,6 @@
 import type { StorySectionSummary } from '~/utils/storySections'
 import type { StoryFeedback } from '~/utils/storyFeedback'
-import type { LoreNote } from '~/utils/loreWorkspace'
+import type { ContextSection, LoreNote } from '~/utils/loreWorkspace'
 
 export type PromptMode = 'instruct' | 'continue'
 
@@ -16,8 +16,11 @@ export type StoryChapter = {
 
 export type Draft = {
   schemaVersion: number
-  synopsis: string
-  guidance: string
+  synopsisSections: ContextSection[]
+  guidanceSections: ContextSection[]
+  // Ids of context entries unticked for the next scene. Stored as exclusions so new entries
+  // are included by default.
+  disabledContextIds: string[]
   characters: LoreNote[]
   setting: LoreNote[]
   chapters: StoryChapter[]

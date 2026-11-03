@@ -4,6 +4,7 @@ import { countWords } from '~/utils/storyDiff'
 const {
   draft,
   activeChapter,
+  contextItems,
   isBusy,
   models,
   loadingModels,
@@ -138,8 +139,8 @@ function changeChapter(id: string) {
 
     <LorePanel
       v-if="activeWorkspace === 'lore'"
-      v-model:synopsis="draft.synopsis"
-      v-model:guidance="draft.guidance"
+      v-model:synopsis-sections="draft.synopsisSections"
+      v-model:guidance-sections="draft.guidanceSections"
       v-model:characters="draft.characters"
       v-model:setting="draft.setting"
       :busy="isBusy"
@@ -177,6 +178,21 @@ function changeChapter(id: string) {
         @select="changeChapter"
         @add="addChapter"
       />
+      <aside class="left-panels">
+        <nav class="side-panel-tabs" role="tablist" aria-label="Scene context">
+          <button
+            id="context-tab"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            aria-controls="context-panel"
+            class="active"
+          >Context</button>
+        </nav>
+        <div id="context-panel" class="side-panel-content" role="tabpanel" aria-labelledby="context-tab">
+          <ContextSelector v-model="draft.disabledContextIds" :items="contextItems" :busy="generating" />
+        </div>
+      </aside>
       <section class="story-panel">
         <nav class="side-panel-tabs story-view-tabs" role="tablist" aria-label="Story view">
           <button

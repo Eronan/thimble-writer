@@ -1,8 +1,8 @@
-import { migrateLoreFields } from './loreWorkspace.ts'
+import { createContextSection, migrateLoreFields, normalizeSections } from './loreWorkspace.ts'
 import type { LoreNote } from './loreWorkspace.ts'
 import type { StoryChapter } from '~/types/storyWriter'
 
-export const DRAFT_SCHEMA_VERSION = 6
+export const DRAFT_SCHEMA_VERSION = 7
 
 type DraftData = Record<string, unknown> & {
   schemaVersion?: unknown
@@ -155,6 +155,21 @@ function versionFiveToSix(data: DraftData): DraftData {
   }
 }
 
+function versionSixToSeven(data: DraftData): DraftData {
+  const synopsis = typeof data.synopsis === 'string' ? data.synopsis : ''
+  const guidance = typeof data.guidance === 'string' ? data.guidance : ''
+  const next: DraftData = {
+    ...data,
+    synopsisSections: [createContextSection('synopsis-1', 'Synopsis', synopsis)],
+    guidanceSections: [createContextSection('guidance-1', 'Writing guidance', guidance)],
+    disabledContextIds: [],
+    schemaVersion: 7,
+  }
+  delete next.synopsis
+  delete next.guidance
+  return next
+}
+
 const migrations: Record<number, (data: DraftData) => DraftData> = {
   0: versionZeroToOne,
   1: versionOneToTwo,
@@ -162,6 +177,7 @@ const migrations: Record<number, (data: DraftData) => DraftData> = {
   3: versionThreeToFour,
   4: versionFourToFive,
   5: versionFiveToSix,
+  6: versionSixToSeven,
 }
 
 function inferVersion(data: DraftData): number {
@@ -202,6 +218,11 @@ export function migrateDraftData(value: unknown): DraftData {
   return {
     ...data,
     structurePrompt: typeof data.structurePrompt === 'string' ? data.structurePrompt : '',
+    synopsisSections: normalizeSections(data.synopsisSections, 'synopsis'),
+    guidanceSections: normalizeSections(data.guidanceSections, 'guidance'),
+    disabledContextIds: Array.isArray(data.disabledContextIds)
+      ? data.disabledContextIds.filter((id): id is string => typeof id === 'string')
+      : [],
     chapters: normalizedChapters,
     activeChapterId,
     schemaVersion: DRAFT_SCHEMA_VERSION,

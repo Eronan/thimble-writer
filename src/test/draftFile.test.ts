@@ -6,7 +6,9 @@ import { draftFileName, parseDraftFile, serializeDraftFile } from '../app/utils/
 test('a serialized draft round-trips through parseDraftFile', () => {
   const draft = {
     schemaVersion: DRAFT_SCHEMA_VERSION,
-    synopsis: 'Keep this',
+    synopsisSections: [{ id: 'premise', title: 'Premise', text: 'Keep this' }],
+    guidanceSections: [],
+    disabledContextIds: [],
     characters: [],
     chapters: [{
       id: 'chapter-1',

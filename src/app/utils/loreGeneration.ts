@@ -1,5 +1,6 @@
 import type { Draft } from '~/types/storyWriter'
-import type { LoreNote } from '~/utils/loreWorkspace'
+import { formatSections } from './loreWorkspace.ts'
+import type { LoreNote } from './loreWorkspace.ts'
 
 export type LoreGenerationKind = 'character' | 'setting'
 export type GeneratedLoreDetails = Pick<LoreNote, 'name' | 'details'> & {
@@ -36,7 +37,7 @@ function clip(text: string, maxChars: number): string {
 }
 
 export function buildLoreGenerationContext(
-  draft: Pick<Draft, 'synopsis' | 'guidance' | 'characters' | 'setting'>,
+  draft: Pick<Draft, 'synopsisSections' | 'guidanceSections' | 'characters' | 'setting'>,
   kind: LoreGenerationKind,
   target: LoreNote,
   prompt: string,
@@ -56,9 +57,11 @@ export function buildLoreGenerationContext(
   ].filter(Boolean).join('\n')
   const request = `Create or refine one ${heading}. Follow the requested details, keep established facts consistent, and return concise, useful story-bible content.\n\nRequest:\n${prompt.trim()}`
   const entry = existing ? `Current ${heading}:\n${existing}` : ''
+  const synopsis = formatSections(draft.synopsisSections)
+  const guidance = formatSections(draft.guidanceSections)
   const background = [
-    draft.synopsis.trim() ? `Story premise:\n${draft.synopsis.trim()}` : '',
-    draft.guidance.trim() ? `Writing guidance:\n${draft.guidance.trim()}` : '',
+    synopsis ? `Story premise:\n${synopsis}` : '',
+    guidance ? `Writing guidance:\n${guidance}` : '',
   ].filter(Boolean).join('\n\n')
   const fixedChars = request.length + (entry ? entry.length + 2 : 0) + 48
   if (fixedChars > maxChars) {

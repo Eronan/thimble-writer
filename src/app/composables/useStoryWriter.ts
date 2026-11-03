@@ -21,7 +21,7 @@ import {
   parseLoreSelectionResponse,
   prepareLoreEntries,
 } from '~/utils/storyLore'
-import { formatLoreForPrompt } from '~/utils/loreWorkspace'
+import { buildContextItems, createContextSection, formatLoreForPrompt } from '~/utils/loreWorkspace'
 import { useStoryProofreading } from './useStoryProofreading'
 import { useStorySummaries } from './useStorySummaries'
 import { useChapterSynopsis } from './useChapterSynopsis'
@@ -32,8 +32,9 @@ const draftSaveDelay = 500
 // summaries are a memory aid for older events, not a replacement for the current scene.
 const defaults: Draft = {
   schemaVersion: DRAFT_SCHEMA_VERSION,
-  synopsis: '',
-  guidance: '',
+  synopsisSections: [createContextSection('synopsis-1', 'Synopsis')],
+  guidanceSections: [createContextSection('guidance-1', 'Writing guidance')],
+  disabledContextIds: [],
   characters: [],
   setting: [],
   chapters: [{
@@ -66,6 +67,10 @@ export function useStoryWriter() {
     if (!chapter) throw new Error('The draft must contain at least one chapter.')
     return chapter
   })
+  const contextItems = computed(() => buildContextItems(draft))
+  // Only the next scene's lore is filtered by the tick boxes; tools that plan or edit the
+  // whole story (structure, lore generation, feedback) keep seeing all of it.
+  const sceneLore = () => formatLoreForPrompt(draft, new Set(draft.disabledContextIds))
   const models = ref<OllamaModel[]>([])
   const loadingModels = ref(false)
   const generating = ref(false)
@@ -80,7 +85,7 @@ export function useStoryWriter() {
   const selectedModelSize = computed(() => models.value.find(model => model.name === draft.model)?.size)
   const contextPreview = computed(() => {
     const context = buildStoryContext({
-      lore: formatLoreForPrompt(draft),
+      lore: sceneLore(),
       chapterSynopsis: activeChapter.value.synopsis,
       prompt: draft.prompt,
       story: activeChapter.value.story,
@@ -101,7 +106,7 @@ export function useStoryWriter() {
       selectorContext.length,
       loreSelectionSystem.length,
     )
-    const loreText = formatLoreForPrompt(draft)
+    const loreText = sceneLore()
     let loreEntries = ''
     let loreError = ''
     if (loreText.trim()) {
@@ -452,7 +457,7 @@ export function useStoryWriter() {
     // The user's rule is structural: a new line starts a paragraph; punctuation alone does not.
     const startsNewParagraph = /(?:\r\n|\n)[\t ]*$/.test(baseStory)
     const alreadyHasParagraphBreak = /(?:\r\n|\n){2,}[\t ]*$/.test(baseStory)
-    const loreText = formatLoreForPrompt(draft)
+    const loreText = sceneLore()
     const context = buildStoryContext({
       lore: loreText,
       chapterSynopsis: activeChapter.value.synopsis,
@@ -626,6 +631,7 @@ export function useStoryWriter() {
   return {
     draft,
     activeChapter,
+    contextItems,
     models,
     loadingModels,
     generating,
