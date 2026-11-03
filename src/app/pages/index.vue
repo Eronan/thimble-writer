@@ -37,6 +37,8 @@ const {
   generateChapterSynopsis,
   generateAllChapterStructure,
   generateLoreEntry,
+  exportDraft,
+  importDraft,
 } = useStoryWriter()
 
 const settingsOpen = ref(false)
@@ -100,7 +102,10 @@ function changeChapter(id: string) {
       :models="models"
       :loading-models="loadingModels"
       :selected-model-size="selectedModelSize"
+      :busy="isBusy"
       @refresh="refreshModels"
+      @export="exportDraft"
+      @import="importDraft"
     />
 
     <nav class="workspace-tabs" aria-label="Workspace">

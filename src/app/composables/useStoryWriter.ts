@@ -11,6 +11,8 @@ import {
   loreSelectorBudget,
 } from '~/utils/contextBudget'
 import { migrateDraftData, DRAFT_SCHEMA_VERSION } from '~/utils/draftSchema'
+import { draftFileName, parseDraftFile, serializeDraftFile } from '~/utils/draftFile'
+import { downloadStory } from '~/utils/storyExport'
 import type { Draft, FeedbackRevision, StoryChapter } from '~/types/storyWriter'
 import {
   fitLoreEntries,
@@ -146,21 +148,73 @@ export function useStoryWriter() {
     draftSaveTimer = setTimeout(persistDraft, draftSaveDelay)
   }
 
+  async function backupDraft(serialized: string, label: string) {
+    try {
+      await draftStorage.backup(serialized, label)
+    } catch {
+      // Storage may be full; the primary save is still untouched until autosave runs.
+    }
+  }
+
+  function applyDraftData(parsed: ReturnType<typeof migrateDraftData>) {
+    Object.assign(draft, structuredClone(defaults), parsed)
+    // Validate collections separately so older drafts can be upgraded safely.
+    if (!draft.chapters.length) {
+      draft.chapters = structuredClone(defaults.chapters)
+      draft.activeChapterId = draft.chapters[0]!.id
+    }
+  }
+
+  function exportDraft() {
+    const blob = new Blob([serializeDraftFile(draft)], { type: 'application/json;charset=utf-8' })
+    downloadStory(blob, draftFileName())
+    error.value = ''
+    status.value = 'Story saved to a JSON file'
+  }
+
+  async function importDraft(file: File) {
+    if (isBusy.value) return
+    try {
+      const parsed = parseDraftFile(await file.text())
+      // Park the current story first: importing replaces everything.
+      await backupDraft(JSON.stringify(draft), `before-import-${Date.now()}`)
+      applyDraftData(parsed)
+      if (models.value.length && !models.value.some(model => model.name === draft.model)) {
+        draft.model = models.value[0]!.name
+      }
+      canUndo.value = false
+      previousStory.value = ''
+      persistDraft()
+      error.value = ''
+      status.value = `Loaded story from ${file.name}`
+    } catch (cause) {
+      error.value = cause instanceof Error
+        ? `Could not load ${file.name}: ${cause.message}`
+        : `Could not load ${file.name}.`
+    }
+  }
+
   onMounted(async () => {
     window.addEventListener('pagehide', persistDraft)
     try {
       const saved = await draftStorage.load()
       if (saved) {
-        const parsed = migrateDraftData(JSON.parse(saved))
-        Object.assign(draft, defaults, parsed)
-        // Validate collections separately so older browser drafts can be upgraded safely.
-        if (!draft.chapters.length) {
-          draft.chapters = [{ ...defaults.chapters[0]! }]
-          draft.activeChapterId = draft.chapters[0]!.id
+        try {
+          const raw = JSON.parse(saved) as { schemaVersion?: unknown } | null
+          // Keep the untouched save before upgrading it, so a missing or buggy migration
+          // can never be the only copy of the story.
+          if (raw?.schemaVersion !== DRAFT_SCHEMA_VERSION) {
+            await backupDraft(saved, `v${String(raw?.schemaVersion ?? 'none')}`)
+          }
+          applyDraftData(migrateDraftData(raw))
+        } catch (cause) {
+          // Autosave would overwrite the unreadable save with an empty draft; stash it first.
+          await backupDraft(saved, `unreadable-${Date.now()}`)
+          throw cause
         }
       }
     } catch {
-      error.value = 'Could not load the saved draft from this browser.'
+      error.value = 'Could not load the saved draft from this browser. The original was kept as a backup in browser storage.'
     } finally {
       readyToSave = true
     }
@@ -609,5 +663,7 @@ export function useStoryWriter() {
     summarizeOlderSections,
     writeNext,
     undo,
+    exportDraft,
+    importDraft,
   }
 }

@@ -6,11 +6,21 @@ defineProps<{
   models: OllamaModel[]
   loadingModels: boolean
   selectedModelSize?: number
+  busy?: boolean
 }>()
 
 const draft = defineModel<Draft>('draft', { required: true })
 const settingsOpen = defineModel<boolean>('settingsOpen', { required: true })
-defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{ refresh: []; export: []; import: [file: File] }>()
+const fileInput = ref<HTMLInputElement | null>(null)
+
+function onFileChosen(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // Reset so choosing the same file again still fires a change event.
+  input.value = ''
+  if (file) emit('import', file)
+}
 </script>
 
 <template>
@@ -32,6 +42,13 @@ defineEmits<{ refresh: [] }>()
       <button class="icon-button refresh-button" type="button" aria-label="Refresh models" title="Refresh models" :disabled="loadingModels" @click="$emit('refresh')">
         <span :class="{ spinning: loadingModels }">↻</span>
       </button>
+      <button class="settings-toggle" type="button" title="Download the whole story as a JSON file" @click="$emit('export')">
+        <span aria-hidden="true">⤓</span> Save JSON
+      </button>
+      <button class="settings-toggle" type="button" title="Replace the story with a saved JSON file" :disabled="busy" @click="fileInput?.click()">
+        <span aria-hidden="true">⤒</span> Load JSON
+      </button>
+      <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="onFileChosen">
       <button class="settings-toggle" type="button" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen">
         <span aria-hidden="true">⚙</span> Settings
         <span class="chevron" :class="{ open: settingsOpen }">⌄</span>
