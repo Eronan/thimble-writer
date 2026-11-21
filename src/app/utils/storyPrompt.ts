@@ -1,4 +1,5 @@
 import { ollamaRequestOptions, type OllamaChatMessage, type OllamaRequestOptions, type OllamaSettings } from '../clients/ollamaClient.ts'
+import { summarySystem } from './storySummary.ts'
 import { locateSection, paragraphsWithOffsets, type StoryParagraph, type StorySectionSummary } from './storySections.ts'
 import {
   charsForContextBudget,
@@ -8,7 +9,7 @@ import {
   STORY_PROMPT_RESERVE_CHARS,
 } from './contextBudget.ts'
 
-export const summarySystem = 'Summarize this story section in one or two concise sentences, in past tense. Name the characters and preserve important events and changes. Reply with only the summary.'
+export { summarySystem }
 
 export type StoryPromptMode = 'instruct' | 'continue'
 
@@ -110,6 +111,8 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
   const eligibleSections = input.summaries
     .map(section => ({ section, range: locateSection(story, section) }))
     .filter(entry => entry.section.summary.trim() && entry.range && entry.range.end <= windowOffset)
+    // Array order is creation order; a section summarized later can sit earlier in the story.
+    .sort((a, b) => a.range!.start - b.range!.start)
   const isCovered = (index: number) => {
     const paragraph = paragraphs[index]
     return Boolean(paragraph) && eligibleSections.some(({ range }) =>

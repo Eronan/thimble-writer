@@ -15,6 +15,7 @@ export const MIN_PROOFREAD_OUTPUT_TOKENS = 1200
 export const PROOFREAD_OUTPUT_HEADROOM_TOKENS = 256
 export const CHAPTER_SYNOPSIS_OUTPUT_TOKENS = 500
 export const CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS = 300
+export const SUMMARY_CONTEXT_SHARE = 0.3
 export const STORY_TEXT_BUDGET_SHARE = 0.6
 export const LORE_BUDGET_SHARE = 0.45
 export const FEEDBACK_NEARBY_BUDGET_SHARE = 0.5
@@ -33,6 +34,15 @@ export function summarySourceBudget(contextTokens: number): number {
     MIN_SUMMARY_SOURCE_CHARS,
     charsForContextBudget(contextTokens, SUMMARY_REPLY_TOKENS, SUMMARY_CONTEXT_RESERVE_TOKENS),
   )
+}
+
+// A summary request carries earlier-section background as well as the section itself. Planning
+// sections against `sourceChars` leaves `contextChars` free, so background can never push a
+// full-size section past the model window.
+export function summaryRequestBudget(contextTokens: number) {
+  const inputChars = summarySourceBudget(contextTokens)
+  const contextChars = Math.floor(inputChars * SUMMARY_CONTEXT_SHARE)
+  return { inputChars, contextChars, sourceChars: inputChars - contextChars }
 }
 
 export function proofreadingBudget(contextTokens: number, requestedOutputTokens: number) {

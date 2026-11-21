@@ -13,10 +13,19 @@ const props = defineProps<{
 const summaries = defineModel<StorySectionSummary[]>({ required: true })
 const emit = defineEmits<{
   summarize: []
+  resummarize: []
   remove: [id: string]
   hover: [id: string | null]
 }>()
 const memoryPanel = ref<HTMLElement | null>(null)
+
+function confirmResummarize() {
+  const count = summaries.value.length
+  const message = count
+    ? `Clear ${count} existing section${count === 1 ? '' : 's'} (including any summaries you edited) and summarize the story again?`
+    : 'Summarize the whole story again?'
+  if (window.confirm(message)) emit('resummarize')
+}
 
 function sourcePreview(source: string) {
   const text = source.replace(/\s+/g, ' ').trim()
@@ -67,6 +76,14 @@ watch(() => props.visible, async (visible) => {
       @click="emit('summarize')"
     >
       {{ busy ? 'Summarizing…' : 'Summarize older sections' }}
+    </button>
+    <button
+      class="summarize-button summarize-button-secondary"
+      type="button"
+      :disabled="busy || !modelAvailable || !story.trim()"
+      @click="confirmResummarize"
+    >
+      Clear &amp; re-summarize all sections
     </button>
     <div v-if="summaries.length" class="memory-list">
       <article

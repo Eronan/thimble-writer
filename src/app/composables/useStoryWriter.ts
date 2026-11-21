@@ -254,7 +254,7 @@ export function useStoryWriter() {
     }
   }
 
-  const { summarizing, summarizeOlderSections } = useStorySummaries({
+  const { summarizing, summarizeOlderSections, resummarizeAllSections } = useStorySummaries({
     draft,
     chapter: activeChapter,
     generating,
@@ -667,6 +667,7 @@ export function useStoryWriter() {
     generateLoreEntry,
     refreshModels,
     summarizeOlderSections,
+    resummarizeAllSections,
     writeNext,
     undo,
     exportDraft,

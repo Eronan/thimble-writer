@@ -20,6 +20,7 @@ const {
   contextPreview,
   refreshModels,
   summarizeOlderSections,
+  resummarizeAllSections,
   removeSummary,
   addFeedback,
   applyFeedback,
@@ -282,6 +283,7 @@ function changeChapter(id: string) {
             :active-summary-id="activeSummaryId"
             :visible="activeSideTab === 'memory'"
             @summarize="summarizeOlderSections()"
+            @resummarize="resummarizeAllSections()"
             @remove="removeSummary"
             @hover="activeSummaryId = $event"
           />

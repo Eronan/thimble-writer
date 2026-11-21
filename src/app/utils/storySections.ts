@@ -51,6 +51,8 @@ export function locateSection(story: string, section: StorySectionSummary) {
   return null
 }
 
+export type PlannedSection = { text: string; start: number; end: number }
+
 export function planStorySections(
   story: string,
   summaries: StorySectionSummary[],
@@ -59,6 +61,21 @@ export function planStorySections(
   flush = false,
   maxSourceChars = Infinity,
 ): string[] {
+  return planStorySectionRanges(
+    story, summaries, recentParagraphCount, paragraphsPerSection, flush, maxSourceChars,
+  ).map(section => section.text)
+}
+
+// Same plan as planStorySections, with each section's position so callers can find the
+// summaries of the sections that precede it.
+export function planStorySectionRanges(
+  story: string,
+  summaries: StorySectionSummary[],
+  recentParagraphCount: number,
+  paragraphsPerSection: number,
+  flush = false,
+  maxSourceChars = Infinity,
+): PlannedSection[] {
   const paragraphs = paragraphsWithOffsets(story)
   const covered = new Set<number>()
   for (const section of summaries) {
@@ -74,14 +91,14 @@ export function planStorySections(
   const recentCount = Math.max(1, Math.floor(recentParagraphCount) || 1)
   const sectionSize = Math.max(1, Math.floor(paragraphsPerSection) || 1)
   const eligibleCount = Math.max(0, paragraphs.length - recentCount)
-  const sections: string[] = []
+  const sections: PlannedSection[] = []
   let run: StoryParagraph[] = []
 
   const addRun = () => {
     const first = run[0]
     const last = run.at(-1)
     if (!first || !last) return
-    sections.push(story.slice(first.start, last.end))
+    sections.push({ text: story.slice(first.start, last.end), start: first.start, end: last.end })
     run = []
   }
 
