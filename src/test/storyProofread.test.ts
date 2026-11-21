@@ -37,6 +37,12 @@ test('proofreading keeps summarized sections in separate requests and supplies t
   assert.equal(chunks[1]?.text, secondSection)
 })
 
+test('the proofread schema asks only for quote, issue and an exact replacement', () => {
+  const item = proofreadResponseFormat.properties.comments.items
+  assert.deepEqual(item.required, ['quote', 'issue', 'replacement'])
+  assert.deepEqual(Object.keys(item.properties), ['quote', 'issue', 'replacement'])
+})
+
 test('structured proofread responses parse into comments and reject malformed items', () => {
   assert.equal(proofreadResponseFormat.type, 'object')
   assert.deepEqual(parseProofreadResponse(JSON.stringify({
@@ -45,7 +51,7 @@ test('structured proofread responses parse into comments and reject malformed it
       before: 'There is ',
       after: ' here.',
       issue: 'Incorrect article.',
-      suggestion: 'Replace with “an error”.',
+      replacement: 'an error',
     }],
   })), {
     comments: [{
@@ -53,7 +59,7 @@ test('structured proofread responses parse into comments and reject malformed it
       before: 'There is ',
       after: ' here.',
       issue: 'Incorrect article.',
-      suggestion: 'Replace with “an error”.',
+      replacement: 'an error',
     }],
     incomplete: false,
     skipped: 0,
@@ -71,8 +77,8 @@ test('structured proofread responses parse into comments and reject malformed it
 test('proofreading skips non-actionable comments and tolerates missing context fields', () => {
   assert.deepEqual(parseProofreadResponse(JSON.stringify({
     comments: [
-      { quote: 'No error', issue: 'No error', suggestion: '' },
-      { quote: 'they was', issue: 'Grammar', suggestion: 'Change to “they were”.' },
+      { quote: 'No error', issue: 'No error', replacement: '' },
+      { quote: 'they was', issue: 'Grammar', replacement: 'they were' },
     ],
   })), {
     comments: [{
@@ -80,7 +86,7 @@ test('proofreading skips non-actionable comments and tolerates missing context f
       before: '',
       after: '',
       issue: 'Grammar',
-      suggestion: 'Change to “they were”.',
+      replacement: 'they were',
     }],
     incomplete: false,
     skipped: 1,
@@ -95,21 +101,21 @@ test('truncated proofreading output keeps only complete comments', () => {
         "before": "There is ",
         "after": " here.",
         "issue": "Incorrect article",
-        "suggestion": "Change to an error."
+        "replacement": "an error"
       },
       {
         "quote": "they was",
         "before": "The group said ",
         "after": " ready.",
         "issue": "Subject-verb agreement",
-        "suggestion": "Change to they were"`
+        "replacement": "they were"`
   assert.deepEqual(parseProofreadResponse(response), {
     comments: [{
       quote: 'a error',
       before: 'There is ',
       after: ' here.',
       issue: 'Incorrect article',
-      suggestion: 'Change to an error.',
+      replacement: 'an error',
     }],
     incomplete: true,
     skipped: 0,
@@ -124,21 +130,21 @@ test('proofread suggestions anchor exactly and use context to disambiguate repea
       before: 'blue ',
       after: ' slept.',
       issue: 'Possible word choice issue.',
-      suggestion: 'Consider another word.',
+      replacement: 'hound',
     },
     {
       quote: 'fox',
       before: '',
       after: '',
       issue: 'Ambiguous quote.',
-      suggestion: 'Revise it.',
+      replacement: 'revised',
     },
     {
       quote: 'not present',
       before: '',
       after: '',
       issue: 'Unanchored quote.',
-      suggestion: 'Revise it.',
+      replacement: 'revised',
     },
   ])
   assert.deepEqual(result.comments.map(({ start, end, quote }) => ({ start, end, quote })), [
@@ -155,14 +161,14 @@ test('proofreading repairs incorrect context for a unique quote but skips ambigu
       before: 'incorrect context',
       after: 'incorrect context',
       issue: 'Wording',
-      suggestion: 'Revise the wording.',
+      replacement: 'revised',
     },
     {
       quote: 'the',
       before: 'incorrect context',
       after: 'incorrect context',
       issue: 'Wording',
-      suggestion: 'Revise the wording.',
+      replacement: 'revised',
     },
   ])
 
@@ -177,5 +183,25 @@ test('proofreading repairs incorrect context for a unique quote but skips ambigu
     before: 'Before the error ',
     after: ' Then the error ended.',
   }])
+  assert.equal(result.skipped, 1)
+})
+
+test('proofread replacements are trimmed and an empty replacement is not a fix', () => {
+  const parsed = parseProofreadResponse(JSON.stringify({
+    comments: [
+      { quote: ' spun ', issue: 'Tense', replacement: ' spins ' },
+      { quote: 'fine', issue: 'Nothing', replacement: '   ' },
+    ],
+  }))
+  assert.deepEqual(parsed.comments, [{ quote: 'spun', before: '', after: '', issue: 'Tense', replacement: 'spins' }])
+  assert.equal(parsed.skipped, 1)
+})
+
+test('a quote that repeats without disambiguating context is skipped rather than guessed', () => {
+  const result = anchorProofreadSuggestions(
+    { start: 0, text: 'The fox ran. The fox slept.' },
+    [{ quote: 'fox', before: '', after: '', issue: 'Word choice', replacement: 'hound' }],
+  )
+  assert.equal(result.comments.length, 0)
   assert.equal(result.skipped, 1)
 })

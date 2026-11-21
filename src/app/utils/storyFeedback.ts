@@ -5,6 +5,11 @@ export type StoryFeedback = {
   before: string
   after: string
   instruction: string
+  // A 'fix' is an exact replacement proposed by the proofreader: `source` becomes `replacement`
+  // with no model call. Everything else (including drafts saved before this field existed) is a
+  // free-form comment the model acts on.
+  kind?: 'comment' | 'fix'
+  replacement?: string
 }
 
 export type FeedbackRange = {

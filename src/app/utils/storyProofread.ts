@@ -8,10 +8,13 @@ export type StoryChunk = {
 
 export type ProofreadSuggestion = {
   quote: string
+  // Optional disambiguation context. The model is no longer asked for it (it cost output tokens
+  // and anchoring rewrites it from the real story anyway), but responses that include it still work.
   before: string
   after: string
   issue: string
-  suggestion: string
+  // The exact text that will be pasted in place of `quote`.
+  replacement: string
 }
 
 export type AnchoredProofreadSuggestion = ProofreadSuggestion & {
@@ -34,12 +37,10 @@ export const proofreadResponseFormat = {
         type: 'object',
         properties: {
           quote: { type: 'string' },
-          before: { type: 'string' },
-          after: { type: 'string' },
           issue: { type: 'string' },
-          suggestion: { type: 'string' },
+          replacement: { type: 'string' },
         },
-        required: ['quote', 'before', 'after', 'issue', 'suggestion'],
+        required: ['quote', 'issue', 'replacement'],
         additionalProperties: false,
       },
     },
@@ -205,8 +206,9 @@ function parseProofreadComments(comments: unknown[]): { comments: ProofreadSugge
     const candidate = comment as Record<string, unknown>
     const quote = typeof candidate.quote === 'string' ? candidate.quote.trim() : ''
     const issue = typeof candidate.issue === 'string' ? candidate.issue.trim() : ''
-    const suggestion = typeof candidate.suggestion === 'string' ? candidate.suggestion.trim() : ''
-    if (!quote || !issue || !suggestion) {
+    const replacement = typeof candidate.replacement === 'string' ? candidate.replacement.trim() : ''
+    // An empty replacement is indistinguishable from "nothing to change", so it is not a fix.
+    if (!quote || !issue || !replacement) {
       skipped++
       continue
     }
@@ -215,7 +217,7 @@ function parseProofreadComments(comments: unknown[]): { comments: ProofreadSugge
       before: typeof candidate.before === 'string' ? candidate.before : '',
       after: typeof candidate.after === 'string' ? candidate.after : '',
       issue,
-      suggestion,
+      replacement,
     })
   }
   return { comments: parsed, skipped }

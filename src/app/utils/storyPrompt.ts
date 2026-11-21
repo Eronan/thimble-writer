@@ -9,7 +9,6 @@ import {
   STORY_PROMPT_RESERVE_CHARS,
 } from './contextBudget.ts'
 
-export { summarySystem }
 
 export type StoryPromptMode = 'instruct' | 'continue'
 

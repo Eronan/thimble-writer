@@ -10,6 +10,7 @@ import {
   type AnchoredProofreadSuggestion,
 } from '~/utils/storyProofread'
 import { proofreadingBudget } from '~/utils/contextBudget'
+import { checkFixReplacement } from '~/utils/storyFixes'
 
 type StoryProofreadingOptions = {
   draft: Draft
@@ -68,12 +69,13 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
             {
               role: 'system',
               content: [
-                'You are a careful fiction proofreader. Identify only clear spelling, grammar, punctuation, or wording errors; do not rewrite for subjective style preferences.',
-                'Return a structured comments list. Each quote must be an exact, contiguous passage from the story and should be as short as possible while identifying the issue.',
-                'The before and after fields must be exact adjacent text immediately before and after the quote, each no longer than 80 characters. Use them to disambiguate repeated quotes.',
+                'You are a careful fiction proofreader. Identify only clear spelling, grammar, punctuation, tense, or wording errors; do not rewrite for subjective style preferences.',
+                'Return a structured comments list. Each item has a quote, an issue, and a replacement.',
+                'quote is the smallest exact, contiguous passage from the story that must change: a single word for a spelling error, a clause or sentence only when the fix needs it. It must appear exactly once in the passage; if the same words repeat, lengthen the quote until it is unique.',
+                'replacement is the exact text that will be pasted in place of quote, and nothing else. It is the corrected version of the quote itself, with the same wording, punctuation style, and voice except for what the issue requires. Never include text from before or after the quote, and never add new sentences.',
+                'issue is a brief reason, under 12 words.',
                 'The story summaries are context only. Do not proofread them or return comments about them.',
-                'Return at most three comments for this passage. Focus on the clearest, most important errors.',
-                'Keep issue and suggestion brief, with a suggested correction of no more than 20 words. Do not change the story yourself.',
+                'Return at most three comments for this passage. Focus on the clearest, most important errors. Do not change the story yourself.',
               ].join(' '),
             },
             {
@@ -103,7 +105,9 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
       let added = 0
       for (const suggestion of suggestions) {
         const overlaps = occupied.some(range => suggestion.start < range.end && suggestion.end > range.start)
-        if (overlaps) {
+        // Fixes are pasted in without a model reviewing them, so only keep corrections that look
+        // like a local edit of their quote (not a rewrite, new paragraph, or duplicated text).
+        if (overlaps || checkFixReplacement(suggestion.quote, suggestion.replacement)) {
           skipped++
           continue
         }
@@ -113,7 +117,9 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
           source: suggestion.quote,
           before: storySnapshot.slice(Math.max(0, suggestion.start - 80), suggestion.start),
           after: storySnapshot.slice(suggestion.end, suggestion.end + 80),
-          instruction: `${suggestion.issue} Suggested correction: ${suggestion.suggestion}`,
+          instruction: suggestion.issue,
+          kind: 'fix',
+          replacement: suggestion.replacement,
         }
         // Keep proofreading suggestions reviewable so writers choose which changes to apply.
         chapter.value.feedback.push(comment)
@@ -124,9 +130,9 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
         ? `; recovered complete comments from ${truncatedResponses} truncated response${truncatedResponses === 1 ? '' : 's'}`
         : ''
       status.value = added
-        ? `Proofreading added ${added} comment${added === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} unanchored or overlapping suggestion${skipped === 1 ? '' : 's'}` : ''}${incompleteNotice}`
+        ? `Proofreading added ${added} suggested fix${added === 1 ? '' : 'es'}${skipped ? `; skipped ${skipped} unanchored, overlapping, or unsafe suggestion${skipped === 1 ? '' : 's'}` : ''}${incompleteNotice}`
         : skipped
-          ? `No comments added; skipped ${skipped} suggestion${skipped === 1 ? '' : 's'} that could not be safely anchored${incompleteNotice}`
+          ? `No fixes added; skipped ${skipped} suggestion${skipped === 1 ? '' : 's'} that could not be safely anchored or applied${incompleteNotice}`
           : truncatedResponses
             ? `Proofreading response was truncated and contained no complete comments${incompleteNotice}`
             : 'Proofreading found no clear issues'

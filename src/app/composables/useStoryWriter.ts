@@ -13,6 +13,7 @@ import {
 import { migrateDraftData, DRAFT_SCHEMA_VERSION } from '~/utils/draftSchema'
 import { draftFileName, parseDraftFile, serializeDraftFile } from '~/utils/draftFile'
 import { downloadStory } from '~/utils/storyExport'
+import { applyFixesToStory, splitFeedback } from '~/utils/storyFixes'
 import type { Draft, FeedbackRevision, StoryChapter } from '~/types/storyWriter'
 import {
   fitLoreEntries,
@@ -326,6 +327,7 @@ export function useStoryWriter() {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       start,
       source: text,
+      kind: 'comment',
       before: activeChapter.value.story.slice(Math.max(0, start - 80), start),
       after: activeChapter.value.story.slice(end, end + 80),
       instruction: instruction.trim(),
@@ -336,9 +338,9 @@ export function useStoryWriter() {
   }
 
   async function applyFeedback(commentId?: string) {
-    const comments = commentId
-      ? activeChapter.value.feedback.filter(comment => comment.id === commentId)
-      : [...activeChapter.value.feedback]
+    // Suggested fixes are applied by acceptFixes, never by asking the model to rewrite them.
+    const comments = splitFeedback(activeChapter.value.feedback).comments
+      .filter(comment => !commentId || comment.id === commentId)
     if (revisingFeedback.value || generating.value || summarizing.value || !comments.length) return
     if (!draft.model) {
       error.value = 'Choose an Ollama model before applying feedback.'
@@ -432,6 +434,47 @@ export function useStoryWriter() {
         || activeChapter.value.feedback.length !== previousFeedback.length
         || activeChapter.value.feedbackRevisions.length !== previousFeedbackRevisions.length
     }
+  }
+
+  // Fixes carry their own exact replacement, so accepting one is a text swap with no model call.
+  // They are located against the current story and spliced together, so the only text that can
+  // enter the story is each fix's replacement.
+  function acceptFixes(ids?: string[]) {
+    if (isBusy.value) return
+    const queued = splitFeedback(activeChapter.value.feedback).fixes
+    const chosen = ids ? queued.filter(fix => ids.includes(fix.id)) : queued
+    if (!chosen.length) return
+
+    const story = activeChapter.value.story
+    const result = applyFixesToStory(story, chosen)
+    if (!result.applied.length) {
+      error.value = 'Those fixes no longer match the story. Dismiss them or proofread again.'
+      return
+    }
+    previousStory.value = story
+    previousFeedback = activeChapter.value.feedback.map(comment => ({ ...comment }))
+    previousFeedbackRevisions = [...activeChapter.value.feedbackRevisions]
+
+    const appliedAt = Date.now()
+    const appliedIds = new Set(result.applied.map(item => item.id))
+    activeChapter.value.story = result.story
+    activeChapter.value.feedbackRevisions.push(...result.applied.map(item => ({
+      id: `${item.id}-${appliedAt.toString(36)}`,
+      instruction: item.instruction,
+      before: item.before,
+      after: item.after,
+      appliedAt,
+    })))
+    activeChapter.value.feedback = activeChapter.value.feedback.filter(comment => !appliedIds.has(comment.id))
+    // Replacements shift text, so refresh the remaining comments' position hints.
+    for (const comment of activeChapter.value.feedback) {
+      const range = locateFeedback(result.story, comment)
+      if (range) comment.start = range.start
+    }
+    canUndo.value = true
+    error.value = ''
+    const count = result.applied.length
+    status.value = `Applied ${count} fix${count === 1 ? '' : 'es'}${result.failed.length ? `; ${result.failed.length} no longer match the story` : ''}`
   }
 
   async function writeNext() {
@@ -668,6 +711,8 @@ export function useStoryWriter() {
     refreshModels,
     summarizeOlderSections,
     resummarizeAllSections,
+    acceptFix: (id: string) => acceptFixes([id]),
+    acceptAllFixes: () => acceptFixes(),
     writeNext,
     undo,
     exportDraft,

@@ -24,6 +24,8 @@ const {
   removeSummary,
   addFeedback,
   applyFeedback,
+  acceptFix,
+  acceptAllFixes,
   proofreadStory,
   removeFeedback,
   writeNext,
@@ -307,6 +309,8 @@ function changeChapter(id: string) {
             :proofreading="proofreading"
             @add="queueFeedback"
             @apply="applyFeedback"
+            @accept-fix="acceptFix"
+            @accept-all-fixes="acceptAllFixes"
             @proofread="proofreadStory"
             @remove="removeFeedback"
             @hover="activeFeedbackId = $event"

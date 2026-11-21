@@ -1276,6 +1276,82 @@ button:disabled {
   cursor: default;
   opacity: 0.48;
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.feedback-section {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 7px;
+}
+.feedback-section + .feedback-section {
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.feedback-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.feedback-section-heading h2 {
+  margin: 0;
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.feedback-section-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+.feedback-section-actions .apply-feedback-button,
+.feedback-section-actions .clear-feedback-button {
+  margin-top: 0;
+}
+.feedback-section .feedback-empty {
+  padding: 10px 4px;
+}
+.fix-issue {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.fix-diff {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 5px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.fix-removed {
+  background: rgba(184, 76, 76, 0.13);
+}
+.fix-added {
+  background: rgba(77, 118, 90, 0.17);
+}
+.fix-added textarea {
+  min-width: 0;
+  flex: 1;
+}
+.fix-sign {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
 .apply-single-feedback-button {
   width: 100%;
   margin-top: 7px;
