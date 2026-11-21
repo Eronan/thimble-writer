@@ -47,6 +47,16 @@ function addComment() {
   instructionText.value = ''
 }
 
+function clearComments() {
+  const count = feedback.value.length
+  if (!count || props.busy) return
+  // Comments do not record whether the proofreader or the writer made them, so this clears the
+  // whole queue. Say so in the prompt rather than silently discarding hand-written ones.
+  if (!window.confirm(`Clear all ${count} queued comment${count === 1 ? '' : 's'}, including any you wrote yourself? Your story text is not changed.`)) return
+  feedback.value = []
+  emit('hover', null)
+}
+
 function focusInstruction() {
   instruction.value?.focus()
 }
@@ -81,6 +91,15 @@ defineExpose({ focusInstruction })
       @click="emit('apply')"
     >
       {{ busy ? 'Revising passages…' : `Apply all ${feedback.length} comment${feedback.length === 1 ? '' : 's'}` }}
+    </button>
+
+    <button
+      class="clear-feedback-button"
+      type="button"
+      :disabled="busy || !feedback.length"
+      @click="clearComments"
+    >
+      Clear all comments
     </button>
 
     <div class="feedback-composer">
