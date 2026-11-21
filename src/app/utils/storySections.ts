@@ -14,9 +14,12 @@ const sceneBreak = /^\s*(\*{3,}|-{3,}|#{3})\s*$/
 
 // Memory follows paragraph/scene boundaries so summaries describe coherent story units. The
 // newest writer window stays raw because the next passage needs exact immediate continuity.
+// Every line break starts a paragraph: that is the editor's own rule, and writeNext separates
+// generated paragraphs with a single newline. Splitting only on blank lines would collapse such
+// a story into one giant paragraph and make recent-text selection impossible.
 export function paragraphsWithOffsets(story: string): StoryParagraph[] {
   const paragraphs: StoryParagraph[] = []
-  const expression = /\S[\s\S]*?(?=\n\s*\n|$)/g
+  const expression = /\S[^\r\n]*/g
   let match: RegExpExecArray | null
   while ((match = expression.exec(story))) {
     paragraphs.push({

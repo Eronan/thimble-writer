@@ -59,3 +59,11 @@ test('source-size cap splits sections before a request gets too large', () => {
     '67890',
   ])
 })
+
+test('a single newline starts a new paragraph, matching how the editor writes stories', () => {
+  assert.deepEqual(paragraphsWithOffsets('First.\nSecond.\r\nThird.'), [
+    { text: 'First.', start: 0, end: 6 },
+    { text: 'Second.', start: 7, end: 14 },
+    { text: 'Third.', start: 16, end: 22 },
+  ])
+})

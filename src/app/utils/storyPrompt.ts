@@ -1,5 +1,5 @@
 import { ollamaRequestOptions, type OllamaChatMessage, type OllamaRequestOptions, type OllamaSettings } from '../clients/ollamaClient.ts'
-import { locateSection, paragraphsWithOffsets, type StorySectionSummary } from './storySections.ts'
+import { locateSection, paragraphsWithOffsets, type StoryParagraph, type StorySectionSummary } from './storySections.ts'
 import {
   charsForContextBudget,
   LORE_BUDGET_SHARE,
@@ -36,6 +36,10 @@ export type StoryContext = {
     storyChars: number
     loreLimitChars: number
     summaryChars: number
+    chapterSynopsisChars: number
+    storyParagraphs: number
+    summarySections: number
+    summarySectionsOmitted: number
   }
 }
 
@@ -57,77 +61,151 @@ export function buildStoryContext(input: StoryContextInput): StoryContext {
     input.maxTokens,
     STORY_CONTEXT_RESERVE_TOKENS,
   )
-  let remainingChars = inputChars
   const prompt = input.prompt.trim()
-  const paragraphs = paragraphsWithOffsets(input.story)
-  const recentParagraphCount = Math.max(1, Math.floor(input.writerParagraphs) || 3)
-  const recentStart = paragraphs.at(-recentParagraphCount)?.start ?? input.story.length
-  // Older events are represented by their latest summaries, while recent prose stays verbatim
-  // because it supplies the exact voice and immediate continuity for the next passage.
-  const validSummaries = input.summaries
-    .map(section => ({ section, range: locateSection(input.story, section) }))
-    .filter(entry => entry.section.summary.trim() && entry.range && entry.range.end <= recentStart)
-  const uncompressedParagraphs = paragraphs.filter(paragraph =>
-    !validSummaries.some(({ range }) => range && paragraph.start < range.end && paragraph.end > range.start),
-  )
-  const uncompressedTextLength = uncompressedParagraphs.reduce((length, paragraph) => length + paragraph.text.length + 2, 0)
   const chapterSynopsis = input.chapterSynopsis.trim()
   const fixedChars = prompt.length + chapterSynopsis.length + summarySystem.length + STORY_PROMPT_RESERVE_CHARS
-  remainingChars = Math.max(0, remainingChars - fixedChars)
-  const storyBudget = Math.min(uncompressedTextLength, Math.floor(remainingChars * STORY_TEXT_BUDGET_SHARE))
-  let storyTail = ''
-  let usedStoryChars = 0
+  const availableChars = Math.max(0, inputChars - fixedChars)
+  const storyLimitChars = Math.floor(availableChars * STORY_TEXT_BUDGET_SHARE)
 
-  for (let index = uncompressedParagraphs.length - 1; index >= 0; index--) {
-    const entry = uncompressedParagraphs[index]
-    if (!entry) continue
-    const paragraph = entry.text
-    const additionalChars = paragraph.length + (storyTail ? 2 : 0)
-    if (usedStoryChars + additionalChars <= storyBudget) {
-      storyTail = storyTail ? `${paragraph}\n\n${storyTail}` : paragraph
-      usedStoryChars += additionalChars
+  const story = input.story
+  const paragraphs = paragraphsWithOffsets(story)
+  const recentParagraphCount = Math.max(1, Math.floor(input.writerParagraphs) || 3)
+
+  // Verbatim prose is chosen by paragraph index. `override` holds the one case where a single
+  // enormous paragraph has to be clipped from its front to fit.
+  const kept = new Set<number>()
+  const override = new Map<number, string>()
+  let storyChars = 0
+  const separatorChars = 2
+
+  // 1. Minimum recent prose. The newest N paragraphs always go in verbatim (budget permitting),
+  //    whether or not a summary exists for them: they carry the exact voice and the immediate
+  //    scene. Math.max keeps this correct when the story has fewer than N paragraphs.
+  const windowStart = Math.max(0, paragraphs.length - recentParagraphCount)
+  let oldestKept = paragraphs.length
+  for (let index = paragraphs.length - 1; index >= windowStart; index--) {
+    const paragraph = paragraphs[index]
+    if (!paragraph) continue
+    const additional = paragraph.text.length + (kept.size ? separatorChars : 0)
+    if (storyChars + additional <= storyLimitChars) {
+      kept.add(index)
+      storyChars += additional
+      oldestKept = index
       continue
     }
-    if (!storyTail && storyBudget > 0) {
-      storyTail = paragraph.slice(-storyBudget)
-      usedStoryChars = storyTail.length
+    // Always pass something from the final paragraph: a clipped tail beats losing the scene.
+    if (!kept.size && storyLimitChars > 0) {
+      override.set(index, paragraph.text.slice(-storyLimitChars))
+      kept.add(index)
+      storyChars = storyLimitChars
+      oldestKept = index
     }
     break
   }
-  remainingChars -= usedStoryChars
 
-  // Smaller models cannot reliably use a full lore document; reserve a bounded slice for relevant
-  // world facts rather than letting lore displace the current story and its accumulated memory.
-  // The actual lore is selected by the separate entry-selection pass before generation.
-  const loreBudget = Math.floor(remainingChars * LORE_BUDGET_SHARE)
+  // Sections only count as "covering" paragraphs when they sit entirely before the verbatim
+  // window. A section that straddles the window is dropped, and its older paragraphs become
+  // ordinary uncovered prose rather than disappearing from both summaries and text.
+  const windowOffset = paragraphs[oldestKept]?.start ?? story.length
+  const eligibleSections = input.summaries
+    .map(section => ({ section, range: locateSection(story, section) }))
+    .filter(entry => entry.section.summary.trim() && entry.range && entry.range.end <= windowOffset)
+  const isCovered = (index: number) => {
+    const paragraph = paragraphs[index]
+    return Boolean(paragraph) && eligibleSections.some(({ range }) =>
+      range && paragraph!.start < range.end && paragraph!.end > range.start,
+    )
+  }
+
+  // 2. Paragraphs no section covers, newest first, directly extending the window backwards.
+  //    Covered paragraphs are skipped (the summary stands in for them). The cursor persists so a
+  //    later pass can resume exactly where this one stopped.
+  let gapCursor = oldestKept - 1
+  const fillUncoveredParagraphs = (limitChars: number) => {
+    while (gapCursor >= 0) {
+      const paragraph = paragraphs[gapCursor]
+      if (!paragraph) { gapCursor--; continue }
+      if (isCovered(gapCursor)) { gapCursor--; continue }
+      const additional = paragraph.text.length + (kept.size ? separatorChars : 0)
+      if (storyChars + additional > limitChars) return
+      kept.add(gapCursor)
+      storyChars += additional
+      gapCursor--
+    }
+  }
+  fillUncoveredParagraphs(storyLimitChars)
+
+  // 3. Lore gets a bounded slice of what is left, but never more than the lore document holds.
+  //    The entries themselves are chosen later by the separate selection pass.
+  let remainingChars = Math.max(0, availableChars - storyChars)
+  const loreBudget = Math.min(
+    Math.floor(remainingChars * LORE_BUDGET_SHARE),
+    input.lore.length,
+  )
   remainingChars -= loreBudget
 
+  // 4. Section summaries fill the rest from the bottom up, so the sections closest to the
+  //    verbatim prose win and the oldest history is what gets dropped first.
   const selectedSummaries: string[] = []
   let usedSummaryChars = 0
-  for (const { section } of [...validSummaries].reverse()) {
+  for (const { section } of [...eligibleSections].reverse()) {
     const line = `- ${section.summary.trim()}`
-    if (!section.summary.trim()) continue
-    if (usedSummaryChars + line.length > remainingChars) break
+    const additional = line.length + (selectedSummaries.length ? 1 : 0)
+    if (usedSummaryChars + additional > remainingChars) break
     selectedSummaries.unshift(line)
-    usedSummaryChars += line.length
+    usedSummaryChars += additional
   }
+  remainingChars -= usedSummaryChars
+
+  // 5. Anything still unused goes back to uncovered raw prose rather than sitting idle.
+  fillUncoveredParagraphs(storyChars + remainingChars)
+
+  const storyText = buildStoryText(story, paragraphs, kept, override)
+  const summariesText = selectedSummaries.join('\n')
 
   return {
     lore: '',
     loreBudget,
-    summaries: selectedSummaries.join('\n'),
-    story: storyTail,
+    summaries: summariesText,
+    story: storyText,
     chapterSynopsis,
-    continueCurrentParagraph: Boolean(input.story.trim()) && !/(?:\r\n|\n)[\t ]*$/.test(input.story),
+    continueCurrentParagraph: Boolean(story.trim()) && !/(?:\r\n|\n)[\t ]*$/.test(story),
     budget: {
       inputChars,
-      storyLimitChars: storyBudget,
-      storyChars: storyTail.length,
+      storyLimitChars,
+      storyChars: storyText.length,
       loreLimitChars: loreBudget,
-      summaryChars: selectedSummaries.join('\n').length,
+      summaryChars: summariesText.length,
       chapterSynopsisChars: chapterSynopsis.length,
+      storyParagraphs: kept.size,
+      summarySections: selectedSummaries.length,
+      summarySectionsOmitted: eligibleSections.length - selectedSummaries.length,
     },
   }
+}
+
+// Adjacent kept paragraphs keep their original separators so the model sees the author's
+// formatting; paragraphs separated by summarized material are joined with a blank line.
+function buildStoryText(
+  story: string,
+  paragraphs: StoryParagraph[],
+  kept: Set<number>,
+  override: Map<number, string>,
+): string {
+  let text = ''
+  let previous: StoryParagraph | undefined
+  let previousIndex = -2
+  for (const index of [...kept].sort((a, b) => a - b)) {
+    const paragraph = paragraphs[index]
+    if (!paragraph) continue
+    const body = override.get(index) ?? paragraph.text
+    if (!text) text = body
+    else if (previous && index === previousIndex + 1) text += story.slice(previous.end, paragraph.start) + body
+    else text += `\n\n${body}`
+    previous = paragraph
+    previousIndex = index
+  }
+  return text
 }
 
 export function makeStoryRequest(input: StoryRequestInput, context: StoryContext): StoryRequest {
