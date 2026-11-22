@@ -25,6 +25,7 @@ import {
 import { buildContextItems, createContextSection, formatLoreForPrompt } from '~/utils/loreWorkspace'
 import { useStoryProofreading } from './useStoryProofreading'
 import { useStorySummaries } from './useStorySummaries'
+import { useContextSelection } from './useContextSelection'
 import { useChapterSynopsis } from './useChapterSynopsis'
 import { useLoreGeneration } from './useLoreGeneration'
 
@@ -36,6 +37,7 @@ const defaults: Draft = {
   synopsisSections: [createContextSection('synopsis-1', 'Synopsis')],
   guidanceSections: [createContextSection('guidance-1', 'Writing guidance')],
   disabledContextIds: [],
+  autoPickContextOnWrite: false,
   characters: [],
   setting: [],
   chapters: [{
@@ -262,6 +264,21 @@ export function useStoryWriter() {
     error,
     status,
   })
+  const {
+    selectingContext,
+    contextPickNote,
+    canUndoContextPick,
+    runContextSelection,
+    autoPickContext,
+    undoContextPick,
+  } = useContextSelection({
+    draft,
+    chapter: activeChapter,
+    items: contextItems,
+    error,
+    status,
+    busy: () => isBusy.value,
+  })
   const { proofreading, proofreadStory } = useStoryProofreading({
     draft,
     chapter: activeChapter,
@@ -482,6 +499,7 @@ export function useStoryWriter() {
       abortController.value?.abort()
       return
     }
+    if (selectingContext.value) return
     if (!draft.model) {
       error.value = 'Choose an Ollama model before writing.'
       return
@@ -500,22 +518,35 @@ export function useStoryWriter() {
     // The user's rule is structural: a new line starts a paragraph; punctuation alone does not.
     const startsNewParagraph = /(?:\r\n|\n)[\t ]*$/.test(baseStory)
     const alreadyHasParagraphBreak = /(?:\r\n|\n){2,}[\t ]*$/.test(baseStory)
-    const loreText = sceneLore()
-    const context = buildStoryContext({
-      lore: loreText,
-      chapterSynopsis: activeChapter.value.synopsis,
-      prompt: draft.prompt,
-      story: baseStory,
-      summaries: activeChapter.value.summaries,
-      maxTokens: draft.maxTokens,
-      numCtx: draft.numCtx,
-      writerParagraphs: draft.writerParagraphs,
-    })
-    context.continueCurrentParagraph = Boolean(baseStory.trim()) && !startsNewParagraph
     const separator = startsNewParagraph && !alreadyHasParagraphBreak ? '\n' : ''
     let generatedText = ''
 
     try {
+      if (draft.autoPickContextOnWrite) {
+        status.value = 'Choosing context…'
+        try {
+          await runContextSelection(controller.signal)
+        } catch (cause) {
+          // Stopping the write stops this too; any other failure should not block writing.
+          if (cause instanceof Error && cause.name === 'AbortError') throw cause
+          // The post-write auto-summary clears `error`, so report this where it persists: the
+          // note in the Context panel, next to the ticks it is about.
+          contextPickNote.value = `Auto-pick failed (${cause instanceof Error ? cause.message : 'unknown error'}); your current ticks were used`
+        }
+      }
+      // The ticks may have just changed, so the lore for this scene is read only now.
+      const loreText = sceneLore()
+      const context = buildStoryContext({
+        lore: loreText,
+        chapterSynopsis: activeChapter.value.synopsis,
+        prompt: draft.prompt,
+        story: baseStory,
+        summaries: activeChapter.value.summaries,
+        maxTokens: draft.maxTokens,
+        numCtx: draft.numCtx,
+        writerParagraphs: draft.writerParagraphs,
+      })
+      context.continueCurrentParagraph = Boolean(baseStory.trim()) && !startsNewParagraph
       let omittedLoreEntries = 0
       if (loreText.trim()) {
         // Summaries establish where the story is now, and the prompt establishes what comes next;
@@ -668,7 +699,7 @@ export function useStoryWriter() {
 
   const isBusy = computed(() =>
     generating.value || summarizing.value || revisingFeedback.value || proofreading.value
-      || chapterSynopsisBusy.value || loreGenerationBusy.value,
+      || chapterSynopsisBusy.value || loreGenerationBusy.value || selectingContext.value,
   )
 
   return {
@@ -711,6 +742,11 @@ export function useStoryWriter() {
     refreshModels,
     summarizeOlderSections,
     resummarizeAllSections,
+    selectingContext,
+    contextPickNote,
+    canUndoContextPick,
+    autoPickContext,
+    undoContextPick,
     acceptFix: (id: string) => acceptFixes([id]),
     acceptAllFixes: () => acceptFixes(),
     writeNext,

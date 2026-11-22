@@ -1004,6 +1004,67 @@ button:disabled {
   cursor: default;
   opacity: 0.55;
 }
+.context-autopick {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 4px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.autopick-button {
+  padding: 8px 10px;
+  border: 1px solid #d6dfd3;
+  border-radius: 6px;
+  background: #f8f9f4;
+  color: var(--green-dark);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.autopick-button:hover:not(:disabled) {
+  background: #eef0e8;
+}
+.autopick-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.autopick-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 11px;
+}
+.autopick-help,
+.autopick-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.autopick-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.autopick-undo {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+.autopick-undo:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
 .context-size {
   margin-left: auto;
   color: var(--muted);

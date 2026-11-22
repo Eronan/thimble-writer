@@ -21,6 +21,8 @@ export type Draft = {
   // Ids of context entries unticked for the next scene. Stored as exclusions so new entries
   // are included by default.
   disabledContextIds: string[]
+  // When on, Write next first lets the model re-tick the context entries for the coming scene.
+  autoPickContextOnWrite: boolean
   characters: LoreNote[]
   setting: LoreNote[]
   chapters: StoryChapter[]

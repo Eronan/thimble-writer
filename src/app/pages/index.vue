@@ -21,6 +21,11 @@ const {
   refreshModels,
   summarizeOlderSections,
   resummarizeAllSections,
+  selectingContext,
+  contextPickNote,
+  canUndoContextPick,
+  autoPickContext,
+  undoContextPick,
   removeSummary,
   addFeedback,
   applyFeedback,
@@ -193,7 +198,18 @@ function changeChapter(id: string) {
           >Context</button>
         </nav>
         <div id="context-panel" class="side-panel-content" role="tabpanel" aria-labelledby="context-tab">
-          <ContextSelector v-model="draft.disabledContextIds" :items="contextItems" :busy="generating" />
+          <ContextSelector
+            v-model="draft.disabledContextIds"
+            v-model:auto-pick-on-write="draft.autoPickContextOnWrite"
+            :items="contextItems"
+            :busy="isBusy"
+            :model-available="Boolean(draft.model)"
+            :selecting="selectingContext"
+            :pick-note="contextPickNote"
+            :can-undo-pick="canUndoContextPick"
+            @auto-pick="autoPickContext"
+            @undo-pick="undoContextPick"
+          />
         </div>
       </aside>
       <section class="story-panel">
