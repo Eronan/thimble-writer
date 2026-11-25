@@ -41,7 +41,7 @@ export type ContextSelectionRequest = {
   outputTokens: number
 }
 
-const groupNames: Record<ContextGroup, string> = {
+export const contextGroupNames: Record<ContextGroup, string> = {
   synopsis: 'Synopsis',
   guidance: 'Writing guidance',
   characters: 'Character',
@@ -83,10 +83,18 @@ function buildStorySide(input: ContextSelectionInput, capChars: number): string 
   return parts.join('\n\n')
 }
 
+// Character and setting entries begin with their own name, which the label already shows, so a
+// leading copy is dropped to save space for the details that matter.
+export function contextItemText(item: ContextItem): string {
+  const text = flatten(item.text)
+  const label = flatten(item.label)
+  return label && text.toLowerCase().startsWith(`${label.toLowerCase()} `) ? text.slice(label.length + 1) : text
+}
+
 // Every entry is listed (evenly clipped if the window is tight) so the model can tick or untick
 // anything; dropping entries from the list would silently decide their fate for it.
-function listItems(items: ContextItem[], maxChars: number): string {
-  const labels = items.map((item, index) => `[${index + 1}] ${groupNames[item.group]} · ${flatten(item.label)}: `)
+export function listContextItems(items: ContextItem[], maxChars: number): string {
+  const labels = items.map((item, index) => `[${index + 1}] ${contextGroupNames[item.group]} · ${flatten(item.label)}: `)
   const marker = ' [clipped]'
   const fixed = labels.reduce((total, label) => total + label.length, 0)
     + Math.max(0, items.length - 1)
@@ -96,7 +104,7 @@ function listItems(items: ContextItem[], maxChars: number): string {
     throw new RangeError('The context is too small to list every setup entry for selection. Increase the context size.')
   }
   return items.map((item, index) => {
-    const text = flatten(item.text)
+    const text = contextItemText(item)
     const excerpt = text.slice(0, perItem)
     return `${labels[index]}${excerpt}${excerpt.length < text.length ? marker : ''}`
   }).join('\n')
@@ -107,7 +115,7 @@ export function buildContextSelectionRequest(input: ContextSelectionInput): Cont
   const base = loreSelectorBudget(input.numCtx, 0, contextSelectionSystem.length)
   const storySide = buildStorySide(input, Math.floor(base.inputChars * CONTEXT_SELECTION_STORY_SHARE))
   const budget = loreSelectorBudget(input.numCtx, storySide.length, contextSelectionSystem.length)
-  const list = listItems(input.items, budget.loreEntriesChars)
+  const list = listContextItems(input.items, budget.loreEntriesChars)
   const user = [
     storySide,
     `Numbered setup entries:\n${list}`,

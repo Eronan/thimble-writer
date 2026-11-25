@@ -70,10 +70,11 @@ test('summary budget leaves room for background without exceeding the summarizer
   for (const numCtx of [256, 1024, 4096, 8192]) {
     const budget = summaryRequestBudget(numCtx)
     assert.equal(budget.inputChars, summarySourceBudget(numCtx))
-    assert.equal(budget.sourceChars + budget.contextChars, budget.inputChars)
+    assert.equal(budget.sourceChars + budget.contextChars + budget.referenceChars, budget.inputChars)
     assert.ok(budget.sourceChars > 0)
   }
   assert.ok(summaryRequestBudget(4096).contextChars > 0)
+  assert.ok(summaryRequestBudget(4096).referenceChars > 0)
 })
 
 test('story context orders summaries by story position, not by creation order', () => {
@@ -86,4 +87,27 @@ test('story context orders summaries by story position, not by creation order', 
     ],
   })
   assert.equal(context.summaries, '- A happened.\n- B happened.')
+})
+
+test('reference lore sits in its own block, apart from the background and the section', () => {
+  const [, user] = makeSummaryMessages(
+    'She opened the door.',
+    ['- The crew reached the harbour.'],
+    ['- Character · Mara: A navigator. She/her.'],
+  )
+  const content = user?.content ?? ''
+  const referenceAt = content.indexOf('REFERENCE')
+  const backgroundAt = content.indexOf('BACKGROUND')
+  const sectionAt = content.indexOf('SECTION TO SUMMARIZE:')
+  assert.ok(referenceAt >= 0 && backgroundAt > referenceAt && sectionAt > backgroundAt)
+  assert.ok(content.slice(referenceAt, backgroundAt).includes('A navigator. She/her.'))
+  assert.ok(!content.slice(backgroundAt).includes('A navigator'))
+  assert.ok(!content.slice(0, sectionAt).includes('She opened the door.'))
+  assert.match(summarySystem, /REFERENCE:/)
+})
+
+test('without reference lines there is no empty reference block', () => {
+  const [, user] = makeSummaryMessages('Text.', ['- Earlier.'], [])
+  assert.ok(!user?.content.includes('REFERENCE'))
+  assert.ok(user?.content.includes('BACKGROUND'))
 })

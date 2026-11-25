@@ -15,7 +15,10 @@ export const MIN_PROOFREAD_OUTPUT_TOKENS = 1200
 export const PROOFREAD_OUTPUT_HEADROOM_TOKENS = 256
 export const CHAPTER_SYNOPSIS_OUTPUT_TOKENS = 500
 export const CHAPTER_SYNOPSIS_CONTEXT_RESERVE_TOKENS = 300
-export const SUMMARY_CONTEXT_SHARE = 0.3
+export const EVOLUTION_OUTPUT_TOKENS = 500
+export const EVOLUTION_CONTEXT_RESERVE_TOKENS = 250
+export const SUMMARY_CONTEXT_SHARE = 0.2
+export const SUMMARY_REFERENCE_SHARE = 0.2
 export const STORY_TEXT_BUDGET_SHARE = 0.6
 export const LORE_BUDGET_SHARE = 0.45
 export const FEEDBACK_NEARBY_BUDGET_SHARE = 0.5
@@ -36,13 +39,22 @@ export function summarySourceBudget(contextTokens: number): number {
   )
 }
 
-// A summary request carries earlier-section background as well as the section itself. Planning
-// sections against `sourceChars` leaves `contextChars` free, so background can never push a
-// full-size section past the model window.
+// A summary request carries reference lore and earlier-section background as well as the section
+// itself. Planning sections against `sourceChars` leaves `referenceChars` and `contextChars` free,
+// so neither can push a full-size section past the model window.
 export function summaryRequestBudget(contextTokens: number) {
   const inputChars = summarySourceBudget(contextTokens)
   const contextChars = Math.floor(inputChars * SUMMARY_CONTEXT_SHARE)
-  return { inputChars, contextChars, sourceChars: inputChars - contextChars }
+  const referenceChars = Math.floor(inputChars * SUMMARY_REFERENCE_SHARE)
+  return { inputChars, contextChars, referenceChars, sourceChars: inputChars - contextChars - referenceChars }
+}
+
+export function evolutionBudget(contextTokens: number) {
+  const outputTokens = Math.min(EVOLUTION_OUTPUT_TOKENS, Math.max(1, contextTokens - 300))
+  return {
+    outputTokens,
+    inputChars: charsForContextBudget(contextTokens, outputTokens, EVOLUTION_CONTEXT_RESERVE_TOKENS),
+  }
 }
 
 export function proofreadingBudget(contextTokens: number, requestedOutputTokens: number) {

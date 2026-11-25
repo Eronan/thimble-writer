@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   anchorProofreadSuggestions,
+  describeProofreadOutcome,
   parseProofreadResponse,
   proofreadResponseFormat,
   splitStoryForProofreading,
@@ -204,4 +205,23 @@ test('a quote that repeats without disambiguating context is skipped rather than
   )
   assert.equal(result.comments.length, 0)
   assert.equal(result.skipped, 1)
+})
+
+test('the proofreading status says why nothing was added', () => {
+  const none = { added: 0, suggested: 0, malformed: 0, unanchored: 0, overlapping: 0, unsafe: 0, truncatedResponses: 0 }
+  assert.match(describeProofreadOutcome(none), /model returned no suggestions/)
+  assert.match(
+    describeProofreadOutcome({ ...none, suggested: 3, overlapping: 3 }),
+    /3 suggestions, but none could be added: 3 suggestions overlapping a comment or fix already queued/,
+  )
+  assert.match(
+    describeProofreadOutcome({ ...none, suggested: 2, unanchored: 1, unsafe: 1 }),
+    /1 quote not found exactly once.*1 replacement that looked like a rewrite/,
+  )
+  assert.equal(
+    describeProofreadOutcome({ ...none, added: 1, suggested: 2, unanchored: 1 }),
+    'Proofreading added 1 suggested fix; skipped 1 quote not found exactly once in the story',
+  )
+  assert.match(describeProofreadOutcome({ ...none, added: 2, suggested: 2 }), /^Proofreading added 2 suggested fixes$/)
+  assert.match(describeProofreadOutcome({ ...none, truncatedResponses: 1 }), /truncated and contained no complete/)
 })

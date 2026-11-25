@@ -36,7 +36,7 @@ test('the request lists every entry, numbered and grouped, apart from the story 
   const list = user.slice(listAt)
   assert.match(list, /\[1\] Synopsis · Premise: A ship is lost in a nebula\./)
   assert.match(list, /\[2\] Writing guidance · Voice: /)
-  assert.match(list, /\[3\] Character · Mara: Mara A navigator with a limp\./)
+  assert.match(list, /\[3\] Character · Mara: A navigator with a limp\./)
   assert.match(list, /\[4\] Setting · The bridge: Cramped, lit red\./)
   // Story-side material is never inside the entries list, and entries never leak above it.
   const storySide = user.slice(0, listAt)

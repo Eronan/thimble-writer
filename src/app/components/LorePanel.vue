@@ -108,6 +108,8 @@ const emit = defineEmits<{
       </div>
     </section>
 
+    <slot name="evolve" />
+
     <section class="lore-section-card">
       <div class="lore-section-group">
         <header class="lore-list-heading">

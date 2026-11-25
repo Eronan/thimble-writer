@@ -21,6 +21,18 @@ const {
   refreshModels,
   summarizeOlderSections,
   resummarizeAllSections,
+  evolving,
+  evolutionProgress,
+  evolutionNote,
+  evolutionProposals,
+  evolutionFailures,
+  canUndoEvolution,
+  runEvolution,
+  stopEvolution,
+  applyEvolution,
+  undoEvolution,
+  dismissEvolution,
+  clearEvolution,
   selectingContext,
   contextPickNote,
   canUndoContextPick,
@@ -157,7 +169,29 @@ function changeChapter(id: string) {
       :error="error"
       :status="status"
       @generate="generateLoreEntry"
-    />
+    >
+      <template #evolve>
+        <CharacterEvolution
+          v-model:proposals="evolutionProposals"
+          :characters="draft.characters"
+          :chapters="draft.chapters"
+          :default-chapter-id="draft.activeChapterId"
+          :failures="evolutionFailures"
+          :running="evolving"
+          :progress="evolutionProgress"
+          :note="evolutionNote"
+          :can-undo="canUndoEvolution"
+          :busy="isBusy"
+          :model-available="Boolean(draft.model)"
+          @run="runEvolution"
+          @stop="stopEvolution"
+          @apply="applyEvolution"
+          @dismiss="dismissEvolution"
+          @clear="clearEvolution"
+          @undo="undoEvolution"
+        />
+      </template>
+    </LorePanel>
 
     <ChapterGenerator
       v-else-if="activeWorkspace === 'chapters'"

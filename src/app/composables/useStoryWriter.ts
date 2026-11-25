@@ -26,6 +26,7 @@ import { buildContextItems, createContextSection, formatLoreForPrompt } from '~/
 import { useStoryProofreading } from './useStoryProofreading'
 import { useStorySummaries } from './useStorySummaries'
 import { useContextSelection } from './useContextSelection'
+import { useCharacterEvolution } from './useCharacterEvolution'
 import { useChapterSynopsis } from './useChapterSynopsis'
 import { useLoreGeneration } from './useLoreGeneration'
 
@@ -166,6 +167,8 @@ export function useStoryWriter() {
 
   function applyDraftData(parsed: ReturnType<typeof migrateDraftData>) {
     Object.assign(draft, structuredClone(defaults), parsed)
+    // Pending character proposals refer to the old entries.
+    clearEvolution()
     // Validate collections separately so older drafts can be upgraded safely.
     if (!draft.chapters.length) {
       draft.chapters = structuredClone(defaults.chapters)
@@ -263,6 +266,7 @@ export function useStoryWriter() {
     generating,
     error,
     status,
+    items: contextItems,
   })
   const {
     selectingContext,
@@ -275,6 +279,25 @@ export function useStoryWriter() {
     draft,
     chapter: activeChapter,
     items: contextItems,
+    error,
+    status,
+    busy: () => isBusy.value,
+  })
+  const {
+    evolving,
+    evolutionProgress,
+    evolutionNote,
+    evolutionProposals,
+    evolutionFailures,
+    canUndoEvolution,
+    runEvolution,
+    stopEvolution,
+    applyEvolution,
+    undoEvolution,
+    dismissEvolution,
+    clearEvolution,
+  } = useCharacterEvolution({
+    draft,
     error,
     status,
     busy: () => isBusy.value,
@@ -699,7 +722,8 @@ export function useStoryWriter() {
 
   const isBusy = computed(() =>
     generating.value || summarizing.value || revisingFeedback.value || proofreading.value
-      || chapterSynopsisBusy.value || loreGenerationBusy.value || selectingContext.value,
+      || chapterSynopsisBusy.value || loreGenerationBusy.value || selectingContext.value
+      || evolving.value,
   )
 
   return {
@@ -742,6 +766,18 @@ export function useStoryWriter() {
     refreshModels,
     summarizeOlderSections,
     resummarizeAllSections,
+    evolving,
+    evolutionProgress,
+    evolutionNote,
+    evolutionProposals,
+    evolutionFailures,
+    canUndoEvolution,
+    runEvolution,
+    stopEvolution,
+    applyEvolution,
+    undoEvolution,
+    dismissEvolution,
+    clearEvolution,
     selectingContext,
     contextPickNote,
     canUndoContextPick,

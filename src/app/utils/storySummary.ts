@@ -1,19 +1,29 @@
 import type { OllamaChatMessage } from '../clients/ollamaClient.ts'
 import { locateSection, type StorySectionSummary } from './storySections.ts'
 
-// The summarizer sees two clearly different things: background it may read but must not
-// summarize, and the single section it must summarize. Keeping them in separately labelled,
-// delimited blocks stops small models from folding earlier events into the new summary.
+// The summarizer sees three clearly different things: reference facts about the people and places
+// involved, background summaries of earlier sections, and the single section it must summarize.
+// Keeping them in separately labelled, delimited blocks stops small models from folding reference
+// or earlier events into the new summary.
 export const summarySystem = [
-  'You write one entry in a story memory log. The user message may contain two parts:',
-  'BACKGROUND: summaries of earlier sections, given only so you understand who people are and what has already happened. Never summarize or repeat the background.',
+  'You write one entry in a story memory log. The user message may contain three parts:',
+  'REFERENCE: facts about the characters and places in the story, given only so you can identify and name them correctly (for example who "she" or "the old man" is). Never summarize or repeat the reference.',
+  'BACKGROUND: summaries of earlier sections, given only so you understand what has already happened. Never summarize or repeat the background.',
   'SECTION TO SUMMARIZE: the only text you summarize.',
-  'Summarize just the section, in one or two concise sentences, in past tense. Name the characters and preserve important events and changes. Reply with only the summary.',
+  'Summarize just the section, in one or two concise sentences, in past tense. Name the characters, using the reference to get names right, and preserve important events and changes. Reply with only the summary.',
 ].join('\n')
 
-export function makeSummaryMessages(source: string, backgroundSummaries: string[] = []): OllamaChatMessage[] {
+export function makeSummaryMessages(
+  source: string,
+  backgroundSummaries: string[] = [],
+  referenceLines: string[] = [],
+): OllamaChatMessage[] {
   const background = backgroundSummaries.map(line => line.trim()).filter(Boolean)
+  const reference = referenceLines.map(line => line.trim()).filter(Boolean)
   const user = [
+    reference.length
+      ? `REFERENCE (people and places; context only, do not summarize):\n${reference.join('\n')}`
+      : '',
     background.length
       ? `BACKGROUND (earlier sections; context only, do not summarize):\n${background.join('\n')}`
       : '',

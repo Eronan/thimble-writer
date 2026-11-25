@@ -4,6 +4,7 @@ import type { Draft, StoryChapter } from '~/types/storyWriter'
 import { locateFeedback, type StoryFeedback } from '~/utils/storyFeedback'
 import {
   anchorProofreadSuggestions,
+  describeProofreadOutcome,
   parseProofreadResponse,
   proofreadResponseFormat,
   splitStoryForProofreading,
@@ -49,7 +50,9 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
       const storySnapshot = chapter.value.story
       const chunks = splitStoryForProofreading(storySnapshot, budget.chunkChars, chapter.value.summaries)
       const suggestions: AnchoredProofreadSuggestion[] = []
-      let skipped = 0
+      let suggested = 0
+      let malformed = 0
+      let unanchored = 0
       let truncatedResponses = 0
       for (const [index, chunk] of chunks.entries()) {
         status.value = chunks.length > 1
@@ -90,10 +93,11 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
           ],
         })
         if (parsed.incomplete) truncatedResponses++
-        skipped += parsed.skipped
+        suggested += parsed.comments.length + parsed.skipped
+        malformed += parsed.skipped
         const anchored = anchorProofreadSuggestions(chunk, parsed.comments)
         suggestions.push(...anchored.comments)
-        skipped += anchored.skipped
+        unanchored += anchored.skipped
       }
 
       const occupied = chapter.value.feedback
@@ -103,12 +107,17 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
         throw new Error('The story changed during proofreading. No comments were added; run proofreading again.')
       }
       let added = 0
+      let overlapping = 0
+      let unsafe = 0
       for (const suggestion of suggestions) {
-        const overlaps = occupied.some(range => suggestion.start < range.end && suggestion.end > range.start)
+        if (occupied.some(range => suggestion.start < range.end && suggestion.end > range.start)) {
+          overlapping++
+          continue
+        }
         // Fixes are pasted in without a model reviewing them, so only keep corrections that look
         // like a local edit of their quote (not a rewrite, new paragraph, or duplicated text).
-        if (overlaps || checkFixReplacement(suggestion.quote, suggestion.replacement)) {
-          skipped++
+        if (checkFixReplacement(suggestion.quote, suggestion.replacement)) {
+          unsafe++
           continue
         }
         const comment: StoryFeedback = {
@@ -126,16 +135,15 @@ export function useStoryProofreading(options: StoryProofreadingOptions) {
         occupied.push({ start: suggestion.start, end: suggestion.end })
         added++
       }
-      const incompleteNotice = truncatedResponses
-        ? `; recovered complete comments from ${truncatedResponses} truncated response${truncatedResponses === 1 ? '' : 's'}`
-        : ''
-      status.value = added
-        ? `Proofreading added ${added} suggested fix${added === 1 ? '' : 'es'}${skipped ? `; skipped ${skipped} unanchored, overlapping, or unsafe suggestion${skipped === 1 ? '' : 's'}` : ''}${incompleteNotice}`
-        : skipped
-          ? `No fixes added; skipped ${skipped} suggestion${skipped === 1 ? '' : 's'} that could not be safely anchored or applied${incompleteNotice}`
-          : truncatedResponses
-            ? `Proofreading response was truncated and contained no complete comments${incompleteNotice}`
-            : 'Proofreading found no clear issues'
+      status.value = describeProofreadOutcome({
+        added,
+        suggested,
+        malformed,
+        unanchored,
+        overlapping,
+        unsafe,
+        truncatedResponses,
+      })
     } catch (cause) {
       error.value = cause instanceof Error ? `Proofreading failed: ${cause.message}` : 'Proofreading failed.'
       status.value = ''

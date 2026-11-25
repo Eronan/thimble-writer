@@ -283,6 +283,50 @@ export function parseProofreadResponse(response: string): ParsedProofreadRespons
   }
 }
 
+export type ProofreadOutcome = {
+  added: number
+  // Everything the model returned, whether or not it was usable.
+  suggested: number
+  malformed: number
+  unanchored: number
+  overlapping: number
+  unsafe: number
+  truncatedResponses: number
+}
+
+// "Nothing happened" has several different causes with different remedies (an empty model reply,
+// a quote the model did not copy exactly, suggestions colliding with comments already queued, a
+// replacement that looked like a rewrite), so say which one it was instead of one vague message.
+export function describeProofreadOutcome(outcome: ProofreadOutcome): string {
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
+  const reasons = [
+    outcome.unanchored
+      ? `${plural(outcome.unanchored, 'quote')} not found exactly once in the story`
+      : '',
+    outcome.overlapping
+      ? `${plural(outcome.overlapping, 'suggestion')} overlapping a comment or fix already queued`
+      : '',
+    outcome.unsafe
+      ? `${plural(outcome.unsafe, 'replacement')} that looked like a rewrite rather than a local fix`
+      : '',
+    outcome.malformed ? `${plural(outcome.malformed, 'incomplete suggestion')}` : '',
+  ].filter(Boolean).join('; ')
+  const truncated = outcome.truncatedResponses
+    ? `; recovered complete suggestions from ${plural(outcome.truncatedResponses, 'truncated response')}`
+    : ''
+
+  if (outcome.added) {
+    return `Proofreading added ${plural(outcome.added, 'suggested fix').replace('fixs', 'fixes')}${reasons ? `; skipped ${reasons}` : ''}${truncated}`
+  }
+  if (outcome.suggested) {
+    return `The model made ${plural(outcome.suggested, 'suggestion')}, but none could be added: ${reasons || 'none were usable'}${truncated}`
+  }
+  if (outcome.truncatedResponses) {
+    return `Proofreading response was truncated and contained no complete suggestions${truncated}`
+  }
+  return 'The model returned no suggestions. Check the Developer tab for its raw reply.'
+}
+
 export function anchorProofreadSuggestions(
   chunk: StoryChunk,
   suggestions: ProofreadSuggestion[],
